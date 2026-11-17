@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgApplicationMapper">
+
+    <resultMap type="KgApplication" id="KgApplicationResult">
+        <result property="appId"            column="app_id"             />
+        <result property="appNo"            column="app_no"             />
+        <result property="jobId"            column="job_id"             />
+        <result property="storeId"          column="store_id"           />
+        <result property="appUserId"        column="app_user_id"        />
+        <result property="realName"         column="real_name"          />
+        <result property="age"              column="age"                />
+        <result property="phone"            column="phone"              />
+        <result property="skills"           column="skills"             />
+        <result property="arrivalDate"      column="arrival_date"       />
+        <result property="stayDays"         column="stay_days"          />
+        <result property="note"             column="note"               />
+        <result property="status"           column="status"             />
+        <result property="submitTime"       column="submit_time"        />
+        <result property="auditTime"        column="audit_time"         />
+        <result property="auditBy"          column="audit_by"           />
+        <result property="auditByType"      column="audit_by_type"      />
+        <result property="rejectReason"     column="reject_reason"      />
+        <result property="withdrawTime"     column="withdraw_time"      />
+        <result property="userIntent"       column="user_intent"        />
+        <result property="userConfirmTime"  column="user_confirm_time"  />
+        <result property="storeConfirmTime" column="store_confirm_time" />
+        <result property="confirmDeadline"  column="confirm_deadline"   />
+        <result property="terminateReason"  column="terminate_reason"   />
+        <result property="onboardTime"      column="onboard_time"       />
+        <result property="delFlag"          column="del_flag"           />
+        <result property="createBy"         column="create_by"          />
+        <result property="createTime"       column="create_time"        />
+        <result property="updateBy"         column="update_by"          />
+        <result property="updateTime"       column="update_time"        />
+        <result property="remark"           column="remark"             />
+        <result property="jobType" column="job_type" />
+        <result property="jobTitle"         column="job_title"          />
+        <result property="storeName"        column="store_name"         />
+        <result property="nickname"         column="nickname"           />
+        <result property="onlineSettleStatus" column="online_settle_status" />
+    </resultMap>
+
+    <!--
+      报名单无论在后台列表还是小程序列表都要显示岗位名、门店名，统一在这里 left join 出来，
+      免得上层拿到单子后再逐条回查（列表页 N+1）。
+
+      关联表的 del_flag 条件写在 on 里而不是 where：岗位或门店被逻辑删除后，
+      历史报名单仍然必须查得到（履约链路还要继续走完），只是名称显示为空；
+      若写进 where，left join 会退化成 inner join，这些单子会凭空消失。
+
+      online_settle_status：线上任务接单的结算单状态（kg_online_settlement 按 app_id 唯一，没有结算单时为空）。
+      后台线上任务审核列表按它显示「已验收 · 待门店付款 / 结算完成」等，结算完成的不再给「终止」。
+    -->
+    <sql id="selectKgApplicationVo">
+        select a.app_id, a.app_no, a.job_id, a.store_id, a.app_user_id, a.real_name, a.age, a.phone,
+               a.skills, a.arrival_date, a.stay_days, a.note, a.status, a.submit_time, a.audit_time,
+               a.audit_by, a.audit_by_type, a.reject_reason, a.withdraw_time, a.user_intent,
+               a.user_confirm_time, a.store_confirm_time, a.confirm_deadline, a.terminate_reason,
+               a.onboard_time, a.del_flag, a.create_by, a.create_time, a.update_by, a.update_time, a.remark,
+               case when j.del_flag = '0' then j.title else null end as job_title,
+               j.job_type, s.store_name as store_name, u.nickname as nickname,
+               (select os.status from kg_online_settlement os where os.app_id = a.app_id) as online_settle_status
+        from kg_application a
+        <!-- 历史报名仍需任务类型来选择流程；已删除岗位仅隐藏名称，不丢失类型。 -->
+        left join kg_job j on j.job_id = a.job_id
+        left join kg_store s on s.store_id = a.store_id and s.del_flag = '0'
+        left join kg_app_user u on u.user_id = a.app_user_id and u.del_flag = '0'
+    </sql>
+
+    <!-- 加锁的当前读状态：与终止 / 撤回的 CAS 更新互斥，拿到锁之后读到的就是最新已提交的状态 -->
+    <select id="selectStatusForUpdate" resultType="string">
+        select status from kg_application where app_id = #{appId} and del_flag = '0' for update
+    </select>
+
+    <select id="selectKgApplicationByAppId" parameterType="Long" resultMap="KgApplicationResult">
+        <include refid="selectKgApplicationVo"/>
+        where a.app_id = #{appId} and a.del_flag = '0'
+    </select>
+
+    <select id="selectKgApplicationList" parameterType="KgApplication" resultMap="KgApplicationResult">
+        <include refid="selectKgApplicationVo"/>
+        <where>
+            a.del_flag = '0'
+            <!-- 单号与手机号是客服按工单精确定位用的，走等值而不是模糊 -->
+            <if test="appNo != null and appNo != ''"> and a.app_no = #{appNo}</if>
+            <if test="realName != null and realName != ''"> and a.real_name like concat('%', #{realName}, '%')</if>
+            <if test="phone != null and phone != ''"> and a.phone = #{phone}</if>
+            <if test="storeId != null"> and a.store_id = #{storeId}</if>
+            <if test="jobId != null"> and a.job_id = #{jobId}</if>
+            <if test="appUserId != null"> and a.app_user_id = #{appUserId}</if>
+            <if test="jobType != null and jobType != ''"> and j.job_type = #{jobType}</if>
+            <if test="params.excludeOnline == true"> and j.job_type &lt;&gt; 'online'</if>
+            <if test="status != null and status != ''"> and a.status = #{status}</if>
+            <!-- 员工端状态页签一次查几个状态（逗号分隔，控制器已逐个校验是真实状态） -->
+            <if test="params.statusIn != null and params.statusIn != ''"> and find_in_set(a.status, #{params.statusIn})</if>
+            <if test="params.submitFrom != null"> and a.submit_time &gt;= #{params.submitFrom}</if>
+            <if test="params.submitBefore != null"> and a.submit_time &lt; #{params.submitBefore}</if>
+            <if test="params.beginTime != null and params.beginTime != ''">
+                and date_format(a.submit_time,'%y%m%d') &gt;= date_format(#{params.beginTime},'%y%m%d')
+            </if>
+            <if test="params.endTime != null and params.endTime != ''">
+                and date_format(a.submit_time,'%y%m%d') &lt;= date_format(#{params.endTime},'%y%m%d')
+            </if>
+        </where>
+        order by a.app_id desc
+    </select>
+
+    <select id="selectAppUserApplications" resultMap="KgApplicationResult">
+        <include refid="selectKgApplicationVo"/>
+        where a.del_flag = '0' and a.app_user_id = #{appUserId}
+        <!-- 用 find_in_set 是为了让"进行中/已结束"这类分组 Tab 一次传多个状态；传单个状态时行为不变 -->
+        <if test="status != null and status != ''"> and find_in_set(a.status, #{status})</if>
+        order by a.app_id desc
+    </select>
+
+    <insert id="insertKgApplication" parameterType="KgApplication" useGeneratedKeys="true" keyProperty="appId">
+        insert into kg_application
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="appNo != null">app_no,</if>
+            <if test="jobId != null">job_id,</if>
+            <if test="storeId != null">store_id,</if>
+            <if test="appUserId != null">app_user_id,</if>
+            <if test="realName != null">real_name,</if>
+            <if test="age != null">age,</if>
+            <if test="phone != null">phone,</if>
+            <if test="skills != null">skills,</if>
+            <if test="arrivalDate != null">arrival_date,</if>
+            <if test="stayDays != null">stay_days,</if>
+            <if test="note != null">note,</if>
+            <if test="status != null">status,</if>
+            <if test="submitTime != null">submit_time,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="remark != null">remark,</if>
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="appNo != null">#{appNo},</if>
+            <if test="jobId != null">#{jobId},</if>
+            <if test="storeId != null">#{storeId},</if>
+            <if test="appUserId != null">#{appUserId},</if>
+            <if test="realName != null">#{realName},</if>
+            <if test="age != null">#{age},</if>
+            <if test="phone != null">#{phone},</if>
+            <if test="skills != null">#{skills},</if>
+            <if test="arrivalDate != null">#{arrivalDate},</if>
+            <if test="stayDays != null">#{stayDays},</if>
+            <if test="note != null">#{note},</if>
+            <if test="status != null">#{status},</if>
+            <if test="submitTime != null">#{submitTime},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="remark != null">#{remark},</if>
+            sysdate()
+        </trim>
+    </insert>
+
+    <!--
+      通用更新，用于补写各环节的时间、原因等附属字段。
+
+      这条语句**故意不包含 status 列**。状态流转一律走 updateStatusWithCas，
+      那里有 where status = #{fromStatus} 的并发保护，并且只有 transfer() 会调用它，
+      终态的名额归还与时段释放也收敛在 transfer() 里。
+      如果这里留一个 status = #{status}，任何人把一个从库里查出来的
+      KgApplication（status 非空）传进来，就会绕过状态机、绕过资源释放，
+      而且编译期和运行期都不会报错 —— 靠注释约定挡不住，所以直接把这一列去掉。
+    -->
+    <update id="updateKgApplication" parameterType="KgApplication">
+        update kg_application
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="realName != null">real_name = #{realName},</if>
+            <if test="age != null">age = #{age},</if>
+            <if test="phone != null">phone = #{phone},</if>
+            <if test="skills != null">skills = #{skills},</if>
+            <if test="arrivalDate != null">arrival_date = #{arrivalDate},</if>
+            <if test="stayDays != null">stay_days = #{stayDays},</if>
+            <if test="note != null">note = #{note},</if>
+            <if test="submitTime != null">submit_time = #{submitTime},</if>
+            <if test="auditTime != null">audit_time = #{auditTime},</if>
+            <if test="auditBy != null">audit_by = #{auditBy},</if>
+            <if test="auditByType != null">audit_by_type = #{auditByType},</if>
+            <if test="rejectReason != null">reject_reason = #{rejectReason},</if>
+            <if test="withdrawTime != null">withdraw_time = #{withdrawTime},</if>
+            <if test="userIntent != null">user_intent = #{userIntent},</if>
+            <if test="userConfirmTime != null">user_confirm_time = #{userConfirmTime},</if>
+            <if test="storeConfirmTime != null">store_confirm_time = #{storeConfirmTime},</if>
+            <if test="confirmDeadline != null">confirm_deadline = #{confirmDeadline},</if>
+            <if test="terminateReason != null">terminate_reason = #{terminateReason},</if>
+            <if test="onboardTime != null">onboard_time = #{onboardTime},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_time = sysdate()
+        </trim>
+        where app_id = #{appId} and del_flag = '0'
+    </update>
+
+    <select id="countByStoreId" resultType="int">
+        select count(1) from kg_application where store_id = #{storeId} and del_flag = '0'
+    </select>
+
+    <select id="countByJobId" resultType="int">
+        select count(1) from kg_application where job_id = #{jobId} and del_flag = '0'
+    </select>
+
+    <!-- 进行中 = 未落到 审核未通过/已撤回/已终止 这三个释放名额的终态；已入职同样占着名额，不能排除 -->
+    <select id="countActiveByUserAndJob" resultType="int">
+        select count(1) from kg_application
+        where app_user_id = #{appUserId} and job_id = #{jobId} and del_flag = '0'
+          and status not in ('review_rejected', 'withdrawn', 'terminated')
+    </select>
+
+    <!--
+      CAS 更新：状态判断与写入压在同一条语句里，由数据库保证原子性。
+      返回 0 说明并发下状态已经被别人改过，调用方必须拒绝本次操作，
+      这是防止重复审核、重复确认录用的关键一步。
+    -->
+    <update id="updateStatusWithCas">
+        update kg_application set status = #{toStatus}, update_by = #{updateBy}, update_time = sysdate()
+        where app_id = #{appId} and status = #{fromStatus} and del_flag = '0'
+    </update>
+
+</mapper>

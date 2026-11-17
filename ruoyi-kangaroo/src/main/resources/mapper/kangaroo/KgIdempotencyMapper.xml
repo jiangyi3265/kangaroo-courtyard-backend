@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgIdempotencyMapper">
+
+    <insert id="insertKey">
+        insert into kg_idempotency (idem_key, biz_type, create_time)
+        values (#{idemKey}, #{bizType}, sysdate())
+    </insert>
+
+    <select id="selectBizId" resultType="java.lang.Long">
+        select biz_id from kg_idempotency where idem_key = #{idemKey}
+    </select>
+
+    <select id="countByKey" resultType="int">
+        select count(1) from kg_idempotency where idem_key = #{idemKey}
+    </select>
+
+    <!-- 键已存在多久（秒）。用来区分"另一个请求正在提交中"与"上次提交崩在半路留下的孤儿键"。 -->
+    <select id="selectAgeSeconds" resultType="java.lang.Integer">
+        select timestampdiff(second, create_time, sysdate())
+        from kg_idempotency where idem_key = #{idemKey}
+    </select>
+
+    <update id="updateBizId">
+        update kg_idempotency set biz_id = #{bizId} where idem_key = #{idemKey}
+    </update>
+
+    <delete id="deleteByKey">
+        delete from kg_idempotency where idem_key = #{idemKey}
+    </delete>
+
+</mapper>

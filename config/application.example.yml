@@ -51,6 +51,10 @@ spring:
   messages:
     # 国际化资源文件路径
     basename: i18n/messages
+  # 序列化时区与 JVM、数据库会话保持一致，避免下发给前端的时间再偏一次
+  jackson:
+    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss
   profiles:
     active: druid
   # 文件上传
@@ -72,7 +76,8 @@ spring:
     # 端口，默认为6379
     port: 6379
     # 数据库索引
-    database: 0
+    # 袋鼠小院建议单独占一个索引（本机 0 号库常被其他项目占用，会造成登录态互相踩踏）
+    database: ${REDIS_DATABASE:0}
     # 密码
     password: ${REDIS_PASSWORD:}
     # 连接超时时间
@@ -134,3 +139,42 @@ xss:
   excludes: /system/notice
   # 匹配链接
   urlPatterns: /system/*,/monitor/*,/tool/*
+
+# 袋鼠小院业务配置
+kangaroo:
+  # 商家房费提现，复用现有微信支付商户配置。先执行 V83 迁移。
+  pay:
+    wechat:
+      transfer:
+        enabled: ${KANGAROO_WX_TRANSFER_ENABLED:false}
+        # 使用商户平台获批的转账场景及报备字段，报备信息为 JSON 数组。
+        scene-id: ${KANGAROO_WX_TRANSFER_SCENE_ID:}
+        scene-report-infos: ${KANGAROO_WX_TRANSFER_SCENE_REPORT_INFOS:[]}
+  # AI评价是独立的模型参考分；原住客统计仍保留。默认关闭，完整配置后才启用。
+  # endpoint 是完整的 HTTPS /chat/completions 地址。API key 只在服务器环境配置。
+  review-ai:
+    enabled: ${KG_REVIEW_AI_ENABLED:false}
+    endpoint: ${KG_REVIEW_AI_ENDPOINT:}
+    api-key: ${KG_REVIEW_AI_API_KEY:}
+    model: ${KG_REVIEW_AI_MODEL:}
+    daily-limit: ${KG_REVIEW_AI_DAILY_LIMIT:30}
+    hourly-limit: ${KG_REVIEW_AI_HOURLY_LIMIT:5}
+    timeout-ms: 15000
+  # 小程序登录令牌有效期（分钟），默认 7 天
+  token:
+    expireTime: 10080
+  # 商家确认录用的时限（小时）。页面文案为 24 小时。
+  confirm-deadline-hours: 24
+  wx:
+    # 本地联调开关：为 true 时不调用微信服务器，直接把 code 当 openid。
+    # 生产环境必须为 false —— 开启后任何人都能用任意 code 冒充任意账号。
+    # 启动时的守卫：为 true 时，数据源必须指向本机（localhost / 127.0.0.1），
+    # 否则 @PostConstruct 直接抛异常，应用起不来。
+    # （代码里还留着一条"prod/production profile 下拒绝启动"的判据，但本项目靠 druid
+    #   这个 profile 加载数据源，active profile 永远是 druid，那一条不会触发。）
+    mock-enabled: false
+
+# 微信小程序凭证从环境变量读取，不写进任何配置文件：
+#   KANGAROO_WX_APPID   小程序 AppID
+#   KANGAROO_WX_SECRET  小程序 AppSecret
+# 未配置时 /app/auth/wx-login 会明确返回"微信登录尚未配置"，不会静默降级成假登录。

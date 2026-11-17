@@ -4,16 +4,31 @@ spring:
         type: com.alibaba.druid.pool.DruidDataSource
         driverClassName: com.mysql.cj.jdbc.Driver
         druid:
+            # 时区：必须同时钉住"驱动写入时用的时区"和"MySQL 会话时区"，否则
+            #   Java 的 new Date() 与 SQL 里的 sysdate() 会写出相差若干小时的两个值，
+            #   同一行里 submit_time 和 create_time 都对不上，按日期筛选会大面积漏数据。
+            #   serverTimezone 决定驱动怎么把 java.util.Date 转成 DATETIME；
+            #   sessionVariables 把 MySQL 会话时区也钉成同一个偏移，
+            #   让 now()/sysdate() 与 Java 侧落在同一个时钟上。
+            #   这里刻意用数值偏移 +08:00 而不是 Asia/Shanghai：
+            #   MySQL 的时区表（mysql.time_zone_name）默认是空的，没执行过
+            #   mysql_tzinfo_to_sql 的实例用命名时区会直接报
+            #   "Unknown or incorrect time zone"，连接池起不来。数值偏移永远可用。
             # 主库数据源
+            #
+            # 这里给了带 sessionVariables 的默认值，而不是裸 ${DB_URL}：
+            # 时区必须钉在连接串上，只写注释提醒是不够的 —— 运维沿用一份旧的
+            # DB_URL 就会静默丢掉它，Java 与 MySQL 又会相差若干小时，而且不报错。
+            # 自定义 DB_URL 时请务必保留 sessionVariables=time_zone='+08:00'。
             master:
-                url: ${DB_URL}
+                url: ${DB_URL:jdbc:mysql://localhost:3306/dkxy?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&sessionVariables=time_zone%3D'%2B08%3A00'}
                 username: ${DB_USERNAME}
                 password: ${DB_PASSWORD}
             # 从库数据源
             slave:
                 # 从数据源开关/默认关闭
                 enabled: false
-                url: ${DB_URL}
+                url: ${DB_URL:jdbc:mysql://localhost:3306/dkxy?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&sessionVariables=time_zone%3D'%2B08%3A00'}
                 username: ${DB_USERNAME}
                 password: ${DB_PASSWORD}
             # 初始连接数

@@ -1,0 +1,14 @@
+{
+  "repository": "zhChuXiao/ChinaGeoJson",
+  "commit": "7aa2c5fabc6a892015625898c3482874b233f9de",
+  "commit_date": "2026-08-10T05:48:25Z",
+  "archive_url": "https://codeload.github.com/zhChuXiao/ChinaGeoJson/zip/7aa2c5fabc6a892015625898c3482874b233f9de",
+  "archive_sha256": "dbaa7aa70e626eedab5606feb87958944d7d948dd3ac9d768d68df7cc2ddb2cc",
+  "catalog_entries": 3210,
+  "boundary_entries": 3204,
+  "coordinates": "GCJ-02",
+  "boundary_sha256": "64d89b4b9d5346cf66967316974d44b3b833ec626e29670de66d858bb540bbf3",
+  "upstream": "https://datav.aliyun.com/portal?tool=atlas",
+  "purpose": "City selection and coarse administrative containment, not navigation or legal boundary determination",
+  "missing_boundaries": []
+}

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgAppUserMapper">
+
+    <resultMap type="KgAppUser" id="KgAppUserResult">
+        <result property="userId"        column="user_id"         />
+        <result property="openid"        column="openid"          />
+        <result property="unionid"       column="unionid"         />
+        <result property="nickname"      column="nickname"        />
+        <result property="avatar"        column="avatar"          />
+        <result property="phone"         column="phone"           />
+        <result property="realName"      column="real_name"       />
+        <result property="gender"        column="gender"          />
+        <result property="city"          column="city"            />
+        <result property="status"        column="status"          />
+        <result property="registerTime"  column="register_time"   />
+        <result property="lastLoginTime" column="last_login_time" />
+        <result property="lastLoginIp"   column="last_login_ip"   />
+        <result property="delFlag"       column="del_flag"        />
+        <result property="createBy"      column="create_by"       />
+        <result property="createTime"    column="create_time"     />
+        <result property="updateBy"      column="update_by"       />
+        <result property="updateTime"    column="update_time"     />
+        <result property="remark"        column="remark"          />
+    </resultMap>
+
+    <!-- 详情/登录用：需要 openid 才能完成微信侧的身份绑定 -->
+    <sql id="selectKgAppUserVo">
+        select user_id, openid, unionid, nickname, avatar, phone, real_name, gender, city, status,
+               register_time, last_login_time, last_login_ip, del_flag,
+               create_by, create_time, update_by, update_time, remark
+        from kg_app_user
+    </sql>
+
+    <!-- 列表用：openid/unionid 是微信侧唯一标识，后台列表页没有使用场景，不查出来就不会被批量导出 -->
+    <sql id="selectKgAppUserListVo">
+        select user_id, nickname, avatar, phone, real_name, gender, city, status,
+               register_time, last_login_time, last_login_ip, del_flag,
+               create_by, create_time, update_by, update_time, remark
+        from kg_app_user
+    </sql>
+
+    <select id="selectKgAppUserByUserId" parameterType="Long" resultMap="KgAppUserResult">
+        <include refid="selectKgAppUserVo"/>
+        where user_id = #{userId} and del_flag = '0'
+    </select>
+
+    <select id="selectByOpenid" parameterType="String" resultMap="KgAppUserResult">
+        <include refid="selectKgAppUserVo"/>
+        where openid = #{openid} and del_flag = '0'
+    </select>
+
+    <select id="selectKgAppUserList" parameterType="KgAppUser" resultMap="KgAppUserResult">
+        <include refid="selectKgAppUserListVo"/>
+        <where>
+            del_flag = '0'
+            <!-- 按账号ID（小程序里叫会员编号）精确找人：员工入口登录的新账号没有手机号、昵称都是默认的「小院同学」，只能靠它 -->
+            <if test="userId != null"> and user_id = #{userId}</if>
+            <if test="nickname != null and nickname != ''"> and nickname like concat('%', #{nickname}, '%')</if>
+            <if test="phone != null and phone != ''"> and phone = #{phone}</if>
+            <if test="city != null and city != ''"> and city = #{city}</if>
+            <if test="status != null and status != ''"> and status = #{status}</if>
+            <if test="params.beginTime != null and params.beginTime != ''">
+                and date_format(create_time,'%y%m%d') &gt;= date_format(#{params.beginTime},'%y%m%d')
+            </if>
+            <if test="params.endTime != null and params.endTime != ''">
+                and date_format(create_time,'%y%m%d') &lt;= date_format(#{params.endTime},'%y%m%d')
+            </if>
+        </where>
+        order by user_id desc
+    </select>
+
+    <insert id="insertKgAppUser" parameterType="KgAppUser" useGeneratedKeys="true" keyProperty="userId">
+        insert into kg_app_user
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="openid != null">openid,</if>
+            <if test="unionid != null">unionid,</if>
+            <if test="nickname != null">nickname,</if>
+            <if test="avatar != null">avatar,</if>
+            <if test="phone != null">phone,</if>
+            <if test="realName != null">real_name,</if>
+            <if test="gender != null">gender,</if>
+            <if test="city != null">city,</if>
+            <if test="status != null">status,</if>
+            <if test="lastLoginTime != null">last_login_time,</if>
+            <if test="lastLoginIp != null">last_login_ip,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="remark != null">remark,</if>
+            register_time,
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="openid != null">#{openid},</if>
+            <if test="unionid != null">#{unionid},</if>
+            <if test="nickname != null">#{nickname},</if>
+            <if test="avatar != null">#{avatar},</if>
+            <if test="phone != null">#{phone},</if>
+            <if test="realName != null">#{realName},</if>
+            <if test="gender != null">#{gender},</if>
+            <if test="city != null">#{city},</if>
+            <if test="status != null">#{status},</if>
+            <if test="lastLoginTime != null">#{lastLoginTime},</if>
+            <if test="lastLoginIp != null">#{lastLoginIp},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="remark != null">#{remark},</if>
+            <!-- 注册时间是运营口径的核心指标，调用方没传就按落库时间兜底，不允许为空 -->
+            <choose>
+                <when test="registerTime != null">#{registerTime},</when>
+                <otherwise>sysdate(),</otherwise>
+            </choose>
+            sysdate()
+        </trim>
+    </insert>
+
+    <!-- openid 是账号身份的锚点，一旦写入不允许再改，故不在更新列中出现 -->
+    <update id="updateKgAppUser" parameterType="KgAppUser">
+        update kg_app_user
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="unionid != null">unionid = #{unionid},</if>
+            <if test="nickname != null">nickname = #{nickname},</if>
+            <if test="avatar != null">avatar = #{avatar},</if>
+            <if test="phone != null">phone = #{phone},</if>
+            <if test="realName != null">real_name = #{realName},</if>
+            <if test="gender != null">gender = #{gender},</if>
+            <if test="city != null">city = #{city},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="lastLoginTime != null">last_login_time = #{lastLoginTime},</if>
+            <if test="lastLoginIp != null">last_login_ip = #{lastLoginIp},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_time = sysdate()
+        </trim>
+        where user_id = #{userId} and del_flag = '0'
+    </update>
+
+    <select id="countDeletedByUserId" resultType="int">
+        select count(1) from kg_app_user where user_id = #{userId} and del_flag = '2'
+    </select>
+
+    <!--
+      手机号当前的归属账号。limit 1 是保守写法：
+      kg_app_user.phone 上没有唯一索引（历史数据里可能已经有重复），
+      这里只需要回答"有没有别人在用"，不需要在这里处理历史重复。
+    -->
+    <select id="selectUserIdByPhone" resultType="java.lang.Long">
+        select user_id from kg_app_user
+         where phone = #{phone} and del_flag = '0'
+         order by user_id limit 1
+    </select>
+
+</mapper>

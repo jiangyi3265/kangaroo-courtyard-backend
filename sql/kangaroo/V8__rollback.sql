@@ -1,0 +1,21 @@
+-- V8 回退：员工端核心（面试评分/改期、分享追踪、调度、投保）。回退前先备份相关表。
+delete from sys_menu where menu_id between 2500 and 2599;
+delete from sys_dict_data where dict_type in ('kg_ins_status', 'kg_urgent_level', 'kg_store_op_type');
+delete from sys_dict_type where dict_type in ('kg_ins_status', 'kg_urgent_level', 'kg_store_op_type');
+drop table if exists kg_insurance_apply;
+drop table if exists kg_insurance_plan;
+drop table if exists kg_dispatch_log;
+drop table if exists kg_job_share_visit;
+drop table if exists kg_job_share;
+drop table if exists kg_staff_op_log;
+alter table kg_store drop column op_type;
+alter table kg_application drop column share_code;
+alter table kg_job drop column source;
+alter table kg_job drop column share_visits;
+alter table kg_job drop column urgent_deadline;
+alter table kg_job drop column urgent_level;
+alter table kg_interview drop column rescheduled_time;
+alter table kg_interview drop column reschedule_count;
+alter table kg_interview drop column staff_note;
+alter table kg_interview drop column staff_rating;
+delete from kg_schema_version where version = 8;

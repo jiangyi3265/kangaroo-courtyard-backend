@@ -9,6 +9,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.util.PatternMatchUtils;
 import com.ruoyi.common.constant.Constants;
 import com.ruoyi.common.constant.HttpStatus;
+import com.ruoyi.common.constant.UserConstants;
 import com.ruoyi.common.core.domain.entity.SysRole;
 import com.ruoyi.common.core.domain.model.LoginUser;
 import com.ruoyi.common.exception.ServiceException;
@@ -99,6 +100,16 @@ public class SecurityUtils
     {
         BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
         return passwordEncoder.encode(password);
+    }
+
+    /** Validate a new plaintext password against the existing login contract. */
+    public static void checkPasswordLength(String password)
+    {
+        if (password == null || password.length() < UserConstants.PASSWORD_MIN_LENGTH
+                || password.length() > UserConstants.PASSWORD_MAX_LENGTH)
+        {
+            throw new ServiceException("密码长度必须在5到20个字符之间", HttpStatus.BAD_REQUEST);
+        }
     }
 
     /**

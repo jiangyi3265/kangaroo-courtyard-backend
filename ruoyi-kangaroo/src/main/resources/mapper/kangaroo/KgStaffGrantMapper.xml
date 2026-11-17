@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgStaffGrantMapper">
+
+    <resultMap type="KgStaffGrant" id="KgStaffGrantResult">
+        <result property="grantId"     column="grant_id"     />
+        <result property="appUserId"   column="app_user_id"  />
+        <result property="storeId"     column="store_id"     />
+        <result property="cityId" column="city_id" />
+        <result property="city" column="city" />
+        <result property="roleCode"    column="role_code"    />
+        <result property="alsoService" column="also_service" />
+        <result property="status"      column="status"       />
+        <result property="grantedBy"   column="granted_by"   />
+        <result property="grantedTime" column="granted_time" />
+        <result property="revokedBy"   column="revoked_by"   />
+        <result property="revokedTime" column="revoked_time" />
+        <result property="delFlag"     column="del_flag"     />
+        <result property="createBy"    column="create_by"    />
+        <result property="createTime"  column="create_time"  />
+        <result property="updateBy"    column="update_by"    />
+        <result property="updateTime"  column="update_time"  />
+        <result property="remark"      column="remark"       />
+        <result property="nickname"    column="nickname"     />
+        <result property="phone"       column="phone"        />
+        <result property="storeName"   column="store_name"   />
+    </resultMap>
+
+    <!-- 授权本身只有 ID，后台列表需要能看懂是谁、在哪个店，所以固定带上账号与门店的可读字段 -->
+    <sql id="selectKgStaffGrantVo">
+        select g.grant_id, g.app_user_id, g.store_id, g.city_id, coalesce(c.name,s.city) as city, g.role_code, g.also_service, g.status,
+               g.granted_by, g.granted_time, g.revoked_by, g.revoked_time, g.del_flag,
+               g.create_by, g.create_time, g.update_by, g.update_time, g.remark,
+               u.nickname, u.phone, s.store_name
+        from kg_staff_grant g
+        left join kg_app_user u on u.user_id = g.app_user_id and u.del_flag = '0'
+        left join kg_store s on s.store_id = g.store_id and s.del_flag = '0'
+        left join kg_city c on c.city_id = g.city_id
+    </sql>
+
+    <select id="selectKgStaffGrantByGrantId" parameterType="Long" resultMap="KgStaffGrantResult">
+        <include refid="selectKgStaffGrantVo"/>
+        where g.grant_id = #{grantId} and g.del_flag = '0'
+    </select>
+
+    <select id="selectKgStaffGrantList" parameterType="KgStaffGrant" resultMap="KgStaffGrantResult">
+        <include refid="selectKgStaffGrantVo"/>
+        <where>
+            g.del_flag = '0'
+            <if test="appUserId != null"> and g.app_user_id = #{appUserId}</if>
+            <if test="storeId != null"> and g.store_id = #{storeId}</if>
+            <if test="cityId != null"> and g.city_id = #{cityId}</if>
+            <if test="roleCode != null and roleCode != ''"> and g.role_code = #{roleCode}</if>
+            <if test="status != null and status != ''"> and g.status = #{status}</if>
+            <if test="nickname != null and nickname != ''"> and u.nickname like concat('%', #{nickname}, '%')</if>
+            <if test="phone != null and phone != ''"> and u.phone like concat('%', #{phone}, '%')</if>
+            <if test="storeName != null and storeName != ''"> and s.store_name like concat('%', #{storeName}, '%')</if>
+            <!-- 时间筛选按授权时间而非建档时间，运营排查的是"什么时候给的权限" -->
+            <if test="params.beginTime != null and params.beginTime != ''">
+                and date_format(g.granted_time,'%y%m%d') &gt;= date_format(#{params.beginTime},'%y%m%d')
+            </if>
+            <if test="params.endTime != null and params.endTime != ''">
+                and date_format(g.granted_time,'%y%m%d') &lt;= date_format(#{params.endTime},'%y%m%d')
+            </if>
+        </where>
+        order by g.grant_id desc
+    </select>
+
+    <!-- 小程序登录态用：门店停用或删除时，挂在其下的员工身份必须同步失效 -->
+    <select id="selectActiveGrantsWithStore" resultMap="KgStaffGrantResult">
+        select g.grant_id, g.app_user_id, g.store_id, g.city_id, coalesce(c.name,s.city) as city, g.role_code, g.also_service, g.status, s.store_name
+        from kg_staff_grant g
+        left join kg_store s on s.store_id = g.store_id
+        left join kg_city c on c.city_id = g.city_id
+        where g.app_user_id = #{appUserId}
+          and g.status = '0' and g.del_flag = '0'
+          and ((g.city_id is null and s.status = '0' and s.del_flag = '0')
+            or (g.store_id is null and g.role_code in ('city_lead','manager','keeper','online_staff','merchant_service','merchant','staff') and c.status='0'))
+        order by g.grant_id
+    </select>
+
+    <select id="selectByUserAndCity" resultMap="KgStaffGrantResult">
+        select * from kg_staff_grant where app_user_id=#{appUserId} and city_id=#{cityId} limit 1
+    </select>
+
+    <!-- 不过滤 status / del_flag：唯一索引 uk_grant_user_store 对已撤销、已删除的行同样生效 -->
+    <select id="selectByUserAndStore" resultMap="KgStaffGrantResult">
+        select grant_id, app_user_id, store_id, role_code, status,
+               granted_by, granted_time, revoked_by, revoked_time, del_flag
+        from kg_staff_grant
+        where app_user_id = #{appUserId} and store_id = #{storeId}
+        limit 1
+    </select>
+
+    <select id="countActive" resultType="int">
+        <!--
+          必须和 selectActiveGrantsWithStore 用同一套过滤条件（含门店状态）。
+          两者口径不一致会出现：登录时下发的 staffGrants 已经不含某停用门店，
+          但服务端逐个接口鉴权时 countActive 仍判定有权限，等于门店停用后员工还能继续操作。
+        -->
+        select count(1)
+        from kg_staff_grant g
+        inner join kg_store s on s.store_id = g.store_id
+        where g.app_user_id = #{appUserId} and g.store_id = #{storeId}
+          and g.status = '0' and g.del_flag = '0'
+          and s.status = '0' and s.del_flag = '0'
+    </select>
+
+    <insert id="insertKgStaffGrant" parameterType="KgStaffGrant" useGeneratedKeys="true" keyProperty="grantId">
+        insert into kg_staff_grant
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="appUserId != null">app_user_id,</if>
+            <if test="storeId != null">store_id,</if>
+            <if test="cityId != null">city_id,</if>
+            <if test="roleCode != null">role_code,</if>
+            <if test="alsoService != null">also_service,</if>
+            <if test="status != null">status,</if>
+            <if test="grantedBy != null">granted_by,</if>
+            <if test="grantedTime != null">granted_time,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="remark != null">remark,</if>
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="appUserId != null">#{appUserId},</if>
+            <if test="storeId != null">#{storeId},</if>
+            <if test="cityId != null">#{cityId},</if>
+            <if test="roleCode != null">#{roleCode},</if>
+            <if test="alsoService != null">#{alsoService},</if>
+            <if test="status != null">#{status},</if>
+            <if test="grantedBy != null">#{grantedBy},</if>
+            <if test="grantedTime != null">#{grantedTime},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="remark != null">#{remark},</if>
+            sysdate()
+        </trim>
+    </insert>
+
+    <update id="updateKgStaffGrant" parameterType="KgStaffGrant">
+        update kg_staff_grant
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="roleCode != null">role_code = #{roleCode},</if>
+            <if test="alsoService != null">also_service = #{alsoService},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="grantedBy != null">granted_by = #{grantedBy},</if>
+            <if test="grantedTime != null">granted_time = #{grantedTime},</if>
+            <if test="revokedBy != null">revoked_by = #{revokedBy},</if>
+            <if test="revokedTime != null">revoked_time = #{revokedTime},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_time = sysdate()
+        </trim>
+        where grant_id = #{grantId} and del_flag = '0'
+    </update>
+
+    <!-- 复活旧行而不是插新行，否则撞 uk_grant_user_store；revoked_* 必须显式置 null，<if> 判空是清不掉的。
+         兼任开关也清掉：撤销前开过的不能跟着复活，这次要开由 Service 接着写（Mapper 方法签名要和线上基线兼容，不加参数） -->
+    <update id="reactivateGrant">
+        update kg_staff_grant
+        set status = '0',
+            del_flag = '0',
+            role_code = #{roleCode},
+            also_service = '0',
+            granted_by = #{grantedBy},
+            granted_time = sysdate(),
+            revoked_by = null,
+            revoked_time = null,
+            update_by = #{grantedBy},
+            update_time = sysdate()
+        where grant_id = #{grantId}
+    </update>
+
+    <update id="revokeByGrantIds">
+        update kg_staff_grant
+        set status = '1',
+            revoked_by = #{revokedBy},
+            revoked_time = sysdate(),
+            update_by = #{revokedBy},
+            update_time = sysdate()
+        where grant_id in
+        <foreach item="grantId" collection="grantIds" open="(" separator="," close=")">
+            #{grantId}
+        </foreach>
+        and del_flag = '0'
+    </update>
+
+
+    <!-- 这里只有门店授权。本城按城市授权的员工由 KgStaffGrantServiceImpl.listActiveStaffUserIds 用 CityGrantScope.holderIds 补上
+         （城市名要先归一「大连市 → 大连」，SQL 里做不了；这家店已有门店授权或撤销记录的人以门店授权为准） -->
+    <select id="selectActiveStaffUserIds" resultType="java.lang.Long">
+        select g.app_user_id
+        from kg_staff_grant g
+        join kg_store s on s.store_id = g.store_id
+        where g.store_id = #{storeId}
+          and g.status = '0' and g.del_flag = '0'
+          and s.status = '0' and s.del_flag = '0'
+          and g.role_code &lt;&gt; 'city_lead'
+    </select>
+
+    <!-- 这家店的商家服务人：门店的线下业务消息（报名、订单、活动）不发给他们 -->
+    <select id="selectActiveMerchantServiceUserIds" resultType="java.lang.Long">
+        select g.app_user_id
+        from kg_staff_grant g
+        where g.store_id = #{storeId}
+          and g.status = '0' and g.del_flag = '0'
+          and g.role_code = 'merchant_service'
+    </select>
+
+</mapper>

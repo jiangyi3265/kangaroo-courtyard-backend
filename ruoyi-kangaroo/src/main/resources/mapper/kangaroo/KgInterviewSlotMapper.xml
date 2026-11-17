@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgInterviewSlotMapper">
+
+    <resultMap type="KgInterviewSlot" id="KgInterviewSlotResult">
+        <result property="slotId"      column="slot_id"       />
+        <result property="storeId"     column="store_id"      />
+        <result property="jobId"       column="job_id"        />
+        <result property="startTime"   column="start_time"    />
+        <result property="endTime"     column="end_time"      />
+        <result property="status"      column="status"        />
+        <result property="bookedAppId" column="booked_app_id" />
+        <result property="delFlag"     column="del_flag"      />
+        <result property="createBy"    column="create_by"     />
+        <result property="createTime"  column="create_time"   />
+        <result property="updateBy"    column="update_by"     />
+        <result property="updateTime"  column="update_time"   />
+        <result property="meetingInfo" column="meeting_info" />
+        <result property="remark"      column="remark"        />
+        <result property="storeName"   column="store_name"    />
+    </resultMap>
+
+    <!-- 门店名一起带出：后台列表和小程序时段选择都要显示门店，省掉一次额外查询 -->
+    <sql id="selectKgInterviewSlotVo">
+        select s.slot_id, s.store_id, s.job_id, s.start_time, s.end_time, s.status, s.booked_app_id,
+               s.del_flag, s.create_by, s.create_time, s.update_by, s.update_time, s.remark, s.meeting_info,
+               t.store_name
+        from kg_interview_slot s
+        left join kg_store t on t.store_id = s.store_id and t.del_flag = '0'
+    </sql>
+
+    <select id="selectKgInterviewSlotBySlotId" parameterType="Long" resultMap="KgInterviewSlotResult">
+        <include refid="selectKgInterviewSlotVo"/>
+        where s.slot_id = #{slotId} and s.del_flag = '0'
+    </select>
+
+    <select id="selectKgInterviewSlotList" parameterType="KgInterviewSlot" resultMap="KgInterviewSlotResult">
+        <include refid="selectKgInterviewSlotVo"/>
+        <where>
+            s.del_flag = '0'
+            <if test="storeId != null"> and s.store_id = #{storeId}</if>
+            <if test="jobId != null"> and s.job_id = #{jobId}</if>
+            <if test="status != null and status != ''"> and s.status = #{status}</if>
+            <if test="storeName != null and storeName != ''"> and t.store_name like concat('%', #{storeName}, '%')</if>
+            <!-- 时段按开始时间筛选（而不是创建时间），排期场景下这才是运营关心的维度 -->
+            <if test="params.beginTime != null and params.beginTime != ''">
+                and date_format(s.start_time,'%y%m%d') &gt;= date_format(#{params.beginTime},'%y%m%d')
+            </if>
+            <if test="params.endTime != null and params.endTime != ''">
+                and date_format(s.start_time,'%y%m%d') &lt;= date_format(#{params.endTime},'%y%m%d')
+            </if>
+        </where>
+        order by s.start_time desc
+    </select>
+
+    <!-- 小程序可选时段：已开始的时段没有预约价值，直接按 now() 过滤掉 -->
+    <select id="selectOpenSlots" resultMap="KgInterviewSlotResult">
+        <include refid="selectKgInterviewSlotVo"/>
+        <where>
+            s.status = 'open' and s.del_flag = '0' and s.start_time &gt; now()
+            <if test="storeId != null"> and s.store_id = #{storeId}</if>
+            <!-- job_id 为空表示门店通用时段，任何岗位都能约 -->
+            and (s.job_id is null or s.job_id = #{jobId})
+        </where>
+        order by s.start_time asc
+    </select>
+
+    <insert id="insertKgInterviewSlot" parameterType="KgInterviewSlot" useGeneratedKeys="true" keyProperty="slotId">
+        insert into kg_interview_slot
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="storeId != null">store_id,</if>
+            <if test="jobId != null">job_id,</if>
+            <if test="startTime != null">start_time,</if>
+            <if test="endTime != null">end_time,</if>
+            <if test="status != null">status,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="remark != null">remark,</if>
+            <if test="meetingInfo != null">meeting_info,</if>
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="storeId != null">#{storeId},</if>
+            <if test="jobId != null">#{jobId},</if>
+            <if test="startTime != null">#{startTime},</if>
+            <if test="endTime != null">#{endTime},</if>
+            <if test="status != null">#{status},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="remark != null">#{remark},</if>
+            <if test="meetingInfo != null">#{meetingInfo},</if>
+            sysdate()
+        </trim>
+    </insert>
+
+    <!--
+      动态 SET 的局部更新：只写"传了值"的列，留给内部的局部更新。
+      刻意不含 booked_app_id：占用关系只能走 bookSlotWithCas / releaseSlot，避免绕过并发控制。
+      后台整表单编辑请走下面的 updateKgInterviewSlotByAdmin。
+    -->
+    <update id="updateKgInterviewSlot" parameterType="KgInterviewSlot">
+        update kg_interview_slot
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="storeId != null">store_id = #{storeId},</if>
+            <if test="jobId != null">job_id = #{jobId},</if>
+            <if test="startTime != null">start_time = #{startTime},</if>
+            <if test="endTime != null">end_time = #{endTime},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="meetingInfo != null">meeting_info = #{meetingInfo},</if>
+            update_time = sysdate()
+        </trim>
+        where slot_id = #{slotId}
+    </update>
+
+    <!--
+      后台"整表单编辑"专用的全量更新。
+
+      为什么要和 updateKgInterviewSlot 拆成两条语句：
+      动态 SET 的语义是"没传的列保持原值"，这对只改个别字段的内部调用是对的；
+      但后台表单里「限定岗位」是 clearable 下拉，清空后请求体里 jobId 直接消失，
+      动态 SET 会把 job_id 整列跳过，于是"弹了修改成功、库里 job_id 没变"（只有 update_time 刷新）。
+      两种语义无法共存，所以后台编辑单独走这条全量语句。
+
+      列的分档：
+      1) 必填列（store_id / start_time / end_time）：无条件 SET。
+         KgInterviewSlotServiceImpl.updateKgInterviewSlot 已把入参里缺失的这三项从原记录补齐，
+         并做过区间与重叠校验，保证非空，不会把 NOT NULL 列写成 NULL。
+      2) 可清空列（job_id、remark）：无条件 SET，清空即写 NULL。
+         job_id 为 NULL 正是产品语义上的"门店通用时段，任何岗位都能约"。
+         显式写 jdbcType：传 null 时 JDBC 驱动无法从 Java 侧推断类型。
+      3) status 仍带 <if> 判空：它是状态列，界面上是单选（可选/已关闭）根本清不空，
+         真收到 null 时保留原值，比写成 NULL 让时段脱离状态机安全。
+      4) booked_app_id 不在本语句里：占用关系只能由 bookSlotWithCas / releaseSlot 维护。
+    -->
+    <!--
+      后台整表单编辑，带占用 CAS。
+
+      expectBookedAppId 是 Service 刚刚读到的占用者（不是 booked 时为 null）。
+      校验与落库之间，小程序仍可能把这个时段约走；少了这条 CAS，
+      这次编辑就会改掉一个**已被预约**时段的起止时间，
+      而 kg_interview 里发给用户的是预约当时的快照，两边从此对不上 ——
+      用户按旧时间来，门店按新时间等。删除路径已有同款保护，这里补齐。
+    -->
+    <update id="updateKgInterviewSlotByAdmin">
+        update kg_interview_slot
+        set store_id   = #{slot.storeId},
+            start_time = #{slot.startTime},
+            end_time   = #{slot.endTime},
+            job_id     = #{slot.jobId, jdbcType=BIGINT},
+            remark     = #{slot.remark, jdbcType=VARCHAR},
+            meeting_info = #{slot.meetingInfo, jdbcType=VARCHAR},
+            <if test="slot.status != null and slot.status != ''">status = #{slot.status},</if>
+            <if test="slot.updateBy != null">update_by = #{slot.updateBy},</if>
+            update_time = sysdate()
+        where slot_id = #{slot.slotId} and del_flag = '0'
+          and (
+                (#{expectBookedAppId} is null and status != 'booked')
+                or (#{expectBookedAppId} is not null and booked_app_id = #{expectBookedAppId})
+              )
+    </update>
+
+    <!--
+      逐条删除 + CAS。
+
+      "能不能删"这条业务规则由 KgInterviewSlotServiceImpl.assertBookingNotActive 判定：
+      占用它的报名还活着才拒绝；报名已终止/撤回/驳回/入职或已被软删，就该允许运营清理，
+      否则这个时段既改不了也删不了，同门店同区间又被唯一索引挡着重建不了，时间点被永久占死。
+
+      但 Service 判定与删除落库之间仍有窗口：小程序可能抢先把这个时段约走。
+      所以这里带上 Service 刚刚读到的 booked_app_id 做 CAS：
+        · 当时不是 booked（expectBookedAppId 为 null）→ 仍然不是 booked 才删；
+        · 当时被某条已失效的报名占着 → 仍然是同一条报名占着才删。
+      被人抢约之后占用者变了，CAS 命中 0 行，调用方据此报"刚被预约，请刷新重试"。
+
+      早先这里写的是一刀切的 `and status != 'booked'`：防住了竞态，
+      但也把"失效占用"一并挡死了，两个需求只满足了一个。
+    -->
+    <update id="deleteSlotWithGuard">
+        update kg_interview_slot
+        set del_flag = '2', update_by = #{operator}, update_time = sysdate()
+        where slot_id = #{slotId} and del_flag = '0'
+          and (
+                (#{expectBookedAppId} is null and status != 'booked')
+                or (#{expectBookedAppId} is not null and booked_app_id = #{expectBookedAppId})
+              )
+    </update>
+
+    <!--
+      已关闭的时段**仍然**占着它那个区间。
+      这里原先写的是 `status != 'closed'`，注释也说"关闭后允许在同一区间重新排"——
+      但 V4 的生成列 slot_uk 只拿 del_flag 做开关：
+        case when del_flag = '0' then concat(store_id,'|',start_time,'|',end_time) end
+      closed 的行照样占着 uk_slot_store_range。
+      于是服务层放行、数据库拦截，运营拿到的是一条原始 SQL 报错，
+      而那条"可以重排"的规则从来就没有真正成立过。
+
+      让服务层向数据库对齐，而不是改一个已经应用过的生成列：
+      要腾出这个区间，就把那条 closed 的时段删掉（软删会把 slot_uk 置 NULL，区间随之释放）。
+    -->
+    <select id="countOverlap" resultType="int">
+        select count(1) from kg_interview_slot
+        where store_id = #{storeId} and del_flag = '0'
+        and start_time &lt; #{endTime} and end_time &gt; #{startTime}
+        <if test="excludeId != null"> and slot_id != #{excludeId}</if>
+    </select>
+
+    <!-- 影响行数为 0 即代表抢占失败，调用方据此提示重选时段 -->
+    <update id="bookSlotWithCas">
+        update kg_interview_slot set status = 'booked', booked_app_id = #{appId}, update_time = sysdate()
+        where slot_id = #{slotId} and status = 'open' and del_flag = '0'
+    </update>
+
+    <!--
+      释放必须带上 booked_app_id = #{appId}：这条语句的语义是"把 *我这条报名* 占的时段还回去"，
+      不是"把这个时段清空"。没有这个条件时，只要传进来的 slotId 指向的是别人正占着的时段
+      （kg_interview.slot_id 与 kg_interview_slot.booked_app_id 之间没有外键互相约束，
+      一处写错或将来多出一条改 slot_id 的路径就会出现这种错配），
+      一次终止报名就会把另一个人已经约好的面试静默踢掉，且没有任何痕迹。
+      加上之后这种情况影响 0 行：宁可"该释放的没释放"（时段停在 booked，后台看得见、可人工处理），
+      也不要"不该释放的被释放"（别人的面试凭空消失，没人会发现）。
+    -->
+    <!--
+      按报名释放：uk_slot_booked(booked_app_id) 保证一条报名同时只占一个时段，所以 booked_app_id = appId 的时段就是它占着的那个。
+      与 releaseSlot 的区别是不依赖调用方手里的 slotId —— 那个值来自事务快照里读到的 kg_interview.slot_id，
+      并发的改期已经把它换成新时段时是过期的，按它释放会放了个寂寞，新时段被已终止 / 已撤回的报名永久占住。
+    -->
+    <update id="releaseSlotsByApp">
+        update kg_interview_slot set status = 'open', booked_app_id = null, update_time = sysdate()
+        where booked_app_id = #{appId} and del_flag = '0'
+    </update>
+
+    <update id="releaseSlot">
+        update kg_interview_slot set status = 'open', booked_app_id = null, update_time = sysdate()
+        where slot_id = #{slotId} and del_flag = '0' and booked_app_id = #{appId}
+    </update>
+
+    <!--
+      运营侧的强制释放，不带 booked_app_id 条件。
+
+      为什么需要它：上面那条带 appId 的语句一旦对不上就静默失败，时段停在 booked。
+      而后台对 booked 的时段既改不了也删不了，同门店同区间又被唯一索引挡着重建不了，
+      这个时间点就被永久占死了。Service 在确认"占用它的报名不存在/已软删/已到终态"
+      之后调这一条把它放回可约池，是唯一的补救出口。
+
+      它没有 appId 条件，所以**只能由那段判定之后调用**，不要拿它做常规释放。
+    -->
+    <update id="forceReleaseSlot">
+        update kg_interview_slot
+        set status = 'open', booked_app_id = null,
+            update_by = #{operator}, update_time = sysdate()
+        where slot_id = #{slotId} and del_flag = '0'
+    </update>
+
+</mapper>

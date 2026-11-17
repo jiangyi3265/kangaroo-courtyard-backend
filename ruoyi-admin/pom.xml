@@ -17,6 +17,12 @@
 
     <dependencies>
 
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- spring-boot-devtools -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -49,6 +55,12 @@
             <artifactId>ruoyi-framework</artifactId>
         </dependency>
 
+        <!-- 袋鼠小院业务模块-->
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-kangaroo</artifactId>
+        </dependency>
+
         <!-- 定时任务(已移除) -->
         <!-- <dependency>
             <groupId>com.ruoyi</groupId>
@@ -65,6 +77,12 @@
 
     <build>
         <plugins>
+            <!-- 业务依赖更新时也重建原始 jar，避免 repackage 复用上次已打入旧依赖的启动包。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration><forceCreation>true</forceCreation></configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

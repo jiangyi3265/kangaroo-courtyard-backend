@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgInterviewMapper">
+
+    <resultMap type="KgInterview" id="KgInterviewResult">
+        <result property="interviewId"     column="interview_id"     />
+        <result property="appId"           column="app_id"           />
+        <result property="slotId"          column="slot_id"          />
+        <result property="startTime"       column="start_time"       />
+        <result property="endTime"         column="end_time"         />
+        <result property="status"          column="status"           />
+        <result property="finishTime"      column="finish_time"      />
+        <result property="durationSeconds" column="duration_seconds" />
+        <result property="understandJob"   column="understand_job"   />
+        <result property="acceptBoard"     column="accept_board"     />
+        <result property="confirmArrival"  column="confirm_arrival"  />
+        <result property="feedbackNote"    column="feedback_note"    />
+        <result property="delFlag"         column="del_flag"         />
+        <result property="rescheduleCount" column="reschedule_count" />
+        <result property="rescheduledTime" column="rescheduled_time" />
+        <result property="staffRating"     column="staff_rating"     />
+        <result property="staffNote"       column="staff_note"       />
+        <result property="createBy"        column="create_by"        />
+        <result property="createTime"      column="create_time"      />
+        <result property="updateBy"        column="update_by"        />
+        <result property="updateTime"      column="update_time"      />
+        <result property="remark"          column="remark"           />
+    </resultMap>
+
+    <sql id="selectKgInterviewVo">
+        select interview_id, app_id, slot_id, start_time, end_time, status, finish_time, duration_seconds,
+               understand_job, accept_board, confirm_arrival, feedback_note, del_flag,
+               reschedule_count, rescheduled_time, staff_rating, staff_note,
+               create_by, create_time, update_by, update_time, remark
+        from kg_interview
+    </sql>
+
+    <select id="selectByAppId" resultMap="KgInterviewResult">
+        <include refid="selectKgInterviewVo"/>
+        where app_id = #{appId} and del_flag = '0'
+    </select>
+
+    <!-- 加锁的当前读：REPEATABLE READ 下普通 select 读的是事务开头的快照，改期 / 终止这类要据此决定释放哪个时段的路径不能用快照 -->
+    <select id="selectByAppIdForUpdate" resultMap="KgInterviewResult">
+        <include refid="selectKgInterviewVo"/>
+        where app_id = #{appId} and del_flag = '0'
+        for update
+    </select>
+
+    <!-- 只作废还停在 booked（约了、人没来面）的面试；已 done 的是历史，保持原状。状态条件在语句里，不先读后写 -->
+    <update id="cancelBookedByApp">
+        update kg_interview set status = 'canceled', update_time = sysdate()
+        where app_id = #{appId} and del_flag = '0' and status = 'booked'
+    </update>
+
+    <select id="selectKgInterviewByInterviewId" parameterType="Long" resultMap="KgInterviewResult">
+        <include refid="selectKgInterviewVo"/>
+        where interview_id = #{interviewId} and del_flag = '0'
+    </select>
+
+    <select id="selectKgInterviewList" parameterType="KgInterview" resultMap="KgInterviewResult">
+        <include refid="selectKgInterviewVo"/>
+        <where>
+            del_flag = '0'
+            <if test="appId != null"> and app_id = #{appId}</if>
+            <if test="slotId != null"> and slot_id = #{slotId}</if>
+            <if test="status != null and status != ''"> and status = #{status}</if>
+            <!-- 面试列表按约定的面试时间筛选，运营排期看的是这个时间而不是建单时间 -->
+            <if test="params.beginTime != null and params.beginTime != ''">
+                and date_format(start_time,'%y%m%d') &gt;= date_format(#{params.beginTime},'%y%m%d')
+            </if>
+            <if test="params.endTime != null and params.endTime != ''">
+                and date_format(start_time,'%y%m%d') &lt;= date_format(#{params.endTime},'%y%m%d')
+            </if>
+        </where>
+        order by start_time desc
+    </select>
+
+    <insert id="insertKgInterview" parameterType="KgInterview" useGeneratedKeys="true" keyProperty="interviewId">
+        insert into kg_interview
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="appId != null">app_id,</if>
+            <if test="slotId != null">slot_id,</if>
+            <if test="startTime != null">start_time,</if>
+            <if test="endTime != null">end_time,</if>
+            <if test="status != null">status,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="remark != null">remark,</if>
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="appId != null">#{appId},</if>
+            <if test="slotId != null">#{slotId},</if>
+            <if test="startTime != null">#{startTime},</if>
+            <if test="endTime != null">#{endTime},</if>
+            <if test="status != null">#{status},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="remark != null">#{remark},</if>
+            sysdate()
+        </trim>
+    </insert>
+
+    <update id="updateKgInterview" parameterType="KgInterview">
+        update kg_interview
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="slotId != null">slot_id = #{slotId},</if>
+            <if test="startTime != null">start_time = #{startTime},</if>
+            <if test="endTime != null">end_time = #{endTime},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="finishTime != null">finish_time = #{finishTime},</if>
+            <if test="durationSeconds != null">duration_seconds = #{durationSeconds},</if>
+            <if test="understandJob != null">understand_job = #{understandJob},</if>
+            <if test="acceptBoard != null">accept_board = #{acceptBoard},</if>
+            <if test="confirmArrival != null">confirm_arrival = #{confirmArrival},</if>
+            <if test="feedbackNote != null">feedback_note = #{feedbackNote},</if>
+            <if test="rescheduleCount != null">reschedule_count = #{rescheduleCount},</if>
+            <if test="rescheduledTime != null">rescheduled_time = #{rescheduledTime},</if>
+            <if test="staffRating != null">staff_rating = #{staffRating},</if>
+            <if test="staffNote != null">staff_note = #{staffNote},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_time = sysdate()
+        </trim>
+        where interview_id = #{interviewId}
+    </update>
+
+</mapper>

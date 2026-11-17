@@ -518,6 +518,7 @@ public class SysUserServiceImpl implements ISysUserService
                     BeanValidators.validateWithException(validator, user);
                     deptService.checkDeptDataScope(user.getDeptId());
                     String password = configService.selectConfigByKey("sys.user.initPassword");
+                    SecurityUtils.checkPasswordLength(password);
                     user.setPassword(SecurityUtils.encryptPassword(password));
                     user.setCreateBy(operName);
                     userMapper.insertUser(user);

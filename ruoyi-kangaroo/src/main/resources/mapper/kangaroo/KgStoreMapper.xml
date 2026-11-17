@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgStoreMapper">
+
+    <resultMap type="KgStore" id="KgStoreResult">
+        <result property="storeId"      column="store_id"      />
+        <result property="storeName"    column="store_name"    />
+        <result property="city"         column="city"          />
+        <result property="address"      column="address"       />
+        <result property="cover"        column="cover"         />
+        <result property="images"       column="images"        />
+        <result property="intro"        column="intro"         />
+        <result property="contactPhone" column="contact_phone" />
+        <result property="safeCert"     column="safe_cert"     />
+        <result property="certTime"     column="cert_time"     />
+        <result property="certBy"       column="cert_by"       />
+        <result property="rating"       column="rating"        />
+        <result property="reviewCount"  column="review_count"  />
+        <result property="opType"       column="op_type"       />
+        <result property="latitude"     column="latitude"      />
+        <result property="longitude"    column="longitude"     />
+        <result property="status"       column="status"        />
+        <result property="delFlag"      column="del_flag"      />
+        <result property="createBy"     column="create_by"     />
+        <result property="createTime"   column="create_time"   />
+        <result property="updateBy"     column="update_by"     />
+        <result property="updateTime"   column="update_time"   />
+        <result property="remark"       column="remark"        />
+    </resultMap>
+
+    <sql id="selectKgStoreVo">
+        select store_id, store_name, city, address, cover, images, intro, contact_phone, safe_cert,
+               cert_time, cert_by, rating, review_count, op_type, latitude, longitude, status, del_flag,
+               create_by, create_time, update_by, update_time, remark
+        from kg_store
+    </sql>
+
+    <select id="selectKgStoreByStoreId" parameterType="Long" resultMap="KgStoreResult">
+        <include refid="selectKgStoreVo"/>
+        where store_id = #{storeId} and del_flag = '0'
+    </select>
+
+    <select id="selectKgStoreList" parameterType="KgStore" resultMap="KgStoreResult">
+        <include refid="selectKgStoreVo"/>
+        <where>
+            del_flag = '0'
+            <if test="storeName != null and storeName != ''"> and store_name like concat('%', #{storeName}, '%')</if>
+            <if test="city != null and city != ''"> and city = #{city}</if>
+            <if test="safeCert != null and safeCert != ''"> and safe_cert = #{safeCert}</if>
+            <if test="status != null and status != ''"> and status = #{status}</if>
+            <if test="params.beginTime != null and params.beginTime != ''">
+                and date_format(create_time,'%y%m%d') &gt;= date_format(#{params.beginTime},'%y%m%d')
+            </if>
+            <if test="params.endTime != null and params.endTime != ''">
+                and date_format(create_time,'%y%m%d') &lt;= date_format(#{params.endTime},'%y%m%d')
+            </if>
+        </where>
+        order by store_id desc
+    </select>
+
+    <insert id="insertKgStore" parameterType="KgStore" useGeneratedKeys="true" keyProperty="storeId">
+        insert into kg_store
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="storeName != null">store_name,</if>
+            <if test="city != null">city,</if>
+            <if test="address != null">address,</if>
+            <if test="cover != null">cover,</if>
+            <if test="images != null">images,</if>
+            <if test="intro != null">intro,</if>
+            <if test="contactPhone != null">contact_phone,</if>
+            <if test="safeCert != null">safe_cert,</if>
+            <if test="certTime != null">cert_time,</if>
+            <if test="certBy != null">cert_by,</if>
+            <if test="opType != null and opType != ''">op_type,</if>
+            <if test="latitude != null">latitude,</if>
+            <if test="longitude != null">longitude,</if>
+            <if test="status != null">status,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="remark != null">remark,</if>
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="storeName != null">#{storeName},</if>
+            <if test="city != null">#{city},</if>
+            <if test="address != null">#{address},</if>
+            <if test="cover != null">#{cover},</if>
+            <if test="images != null">#{images},</if>
+            <if test="intro != null">#{intro},</if>
+            <if test="contactPhone != null">#{contactPhone},</if>
+            <if test="safeCert != null">#{safeCert},</if>
+            <if test="certTime != null">#{certTime},</if>
+            <if test="certBy != null">#{certBy},</if>
+            <if test="opType != null and opType != ''">#{opType},</if>
+            <if test="latitude != null">#{latitude},</if>
+            <if test="longitude != null">#{longitude},</if>
+            <if test="status != null">#{status},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="remark != null">#{remark},</if>
+            sysdate()
+        </trim>
+    </insert>
+
+    <update id="updateKgStore" parameterType="KgStore">
+        update kg_store
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="storeName != null">store_name = #{storeName},</if>
+            <if test="city != null">city = #{city},</if>
+            <if test="address != null">address = #{address},</if>
+            <if test="cover != null">cover = #{cover},</if>
+            <if test="images != null">images = #{images},</if>
+            <if test="intro != null">intro = #{intro},</if>
+            <if test="contactPhone != null">contact_phone = #{contactPhone},</if>
+            <if test="safeCert != null">safe_cert = #{safeCert},</if>
+            <if test="certTime != null">cert_time = #{certTime},</if>
+            <if test="certBy != null">cert_by = #{certBy},</if>
+            <if test="rating != null">rating = #{rating},</if>
+            <if test="reviewCount != null">review_count = #{reviewCount},</if>
+            <if test="opType != null and opType != ''">op_type = #{opType},</if>
+            <if test="latitude != null">latitude = #{latitude},</if>
+            <if test="longitude != null">longitude = #{longitude},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_time = sysdate()
+        </trim>
+        where store_id = #{storeId}
+    </update>
+
+    <update id="deleteKgStoreByStoreIds">
+        update kg_store set del_flag = '2', update_by = #{updateBy}, update_time = sysdate()
+        where store_id in
+        <foreach item="storeId" collection="storeIds" open="(" separator="," close=")">
+            #{storeId}
+        </foreach>
+        and del_flag = '0'
+    </update>
+
+    <update id="clearCert">
+        update kg_store set cert_time = null, cert_by = null where store_id = #{storeId}
+    </update>
+
+    <select id="countByNameAndCity" resultType="int">
+        select count(1) from kg_store
+        where store_name = #{storeName} and city = #{city} and del_flag = '0'
+        <if test="excludeId != null"> and store_id != #{excludeId}</if>
+    </select>
+
+</mapper>

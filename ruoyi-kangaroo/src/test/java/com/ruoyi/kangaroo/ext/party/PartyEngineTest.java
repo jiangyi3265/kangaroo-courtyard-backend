@@ -1,0 +1,18 @@
+package com.ruoyi.kangaroo.ext.party;
+import java.util.*;import org.junit.jupiter.api.*;import static org.junit.jupiter.api.Assertions.*;import com.ruoyi.common.exception.ServiceException;import static com.ruoyi.kangaroo.ext.KgJdbc.p;
+class PartyEngineTest {
+ PartyEngine e=new PartyEngine(()->1); long now=100000;
+ Map<String,Object> body(PartyRoom r){return p("requestId",UUID.randomUUID().toString(),"phaseToken",e.token(r));}
+ void cmd(PartyRoom r,long uid,String action){e.command(r,uid,"玩家"+uid,action,body(r),now);}
+ PartyRoom game(String mode,int count){PartyRoom r=e.create("123456",1,"玩家1",mode,now);for(int i=2;i<=count;i++)cmd(r,i,"join");cmd(r,1,"start");return r;}
+ @Test void startNeedsHostAndTwoPeople(){PartyRoom r=e.create("123456",1,"A","dice",now);assertThrows(ServiceException.class,()->cmd(r,1,"start"));cmd(r,2,"join");assertThrows(ServiceException.class,()->cmd(r,2,"start"));cmd(r,1,"start");assertEquals("playing",r.phase);}
+ @Test void retryNeverRerollsAndNonTurnCannotRoll(){PartyRoom r=game("monopoly",2);Map<String,Object>b=body(r);e.command(r,1,"A","roll",b,now);e.command(r,1,"A","roll",b,now);assertEquals(1,r.players.get(0).position);assertThrows(ServiceException.class,()->cmd(r,1,"roll"));assertThrows(ServiceException.class,()->cmd(r,2,"roll"));}
+ @Test void buyingAndRentConserveBalances(){PartyRoom r=game("monopoly",2);cmd(r,1,"roll");cmd(r,1,"buy");assertEquals(1380,r.players.get(0).money);assertThrows(ServiceException.class,()->cmd(r,1,"buy"));cmd(r,1,"end");cmd(r,2,"roll");assertEquals(1476,r.players.get(1).money);assertEquals(1404,r.players.get(0).money);assertEquals(1L,r.owners.get(1).longValue());}
+ @Test void timeoutInvalidatesOldAction(){PartyRoom r=game("dice",2);Map<String,Object>b=body(r);assertTrue(e.advance(r,r.deadline));assertEquals(1,r.current);assertThrows(ServiceException.class,()->e.command(r,1,"A","roll",b,now));}
+ @Test void leavingHostContinuesAndLastPlayerWins(){PartyRoom r=game("monopoly",3);cmd(r,1,"leave");assertEquals(2,r.host);assertEquals(1,r.current);cmd(r,2,"leave");assertEquals("finished",r.phase);assertEquals(3,r.host);}
+ @Test void bankruptcyReleasesPropertyAndNextGameRestoresPlayers(){PartyRoom r=game("monopoly",2);cmd(r,1,"roll");cmd(r,1,"buy");cmd(r,1,"bankrupt");assertTrue(r.owners.isEmpty());assertEquals("finished",r.phase);cmd(r,1,"replay");assertEquals(2,r.players.size());assertFalse(r.players.get(0).out);assertEquals(1500,r.players.get(0).money);}
+ @Test void sixDiceSharedAndHostCanFinish(){PartyRoom r=e.create("123456",1,"A","dice",now);cmd(r,2,"join");Map<String,Object>b=body(r);b.put("diceCount",6);e.command(r,1,"A","settings",b,now);cmd(r,1,"start");cmd(r,1,"roll");assertEquals(6,r.dice.length);assertEquals(6,r.players.get(0).score);assertEquals(e.view(r,1L,now).get("dice"),e.view(r,2L,now).get("dice"));assertThrows(ServiceException.class,()->cmd(r,2,"finish"));cmd(r,1,"finish");assertEquals("finished",r.phase);}
+ @Test void insufficientRentCausesBankruptcyWithoutNegativeCash(){PartyRoom r=game("monopoly",2);r.owners.put(1,2L);r.players.get(0).money=5;cmd(r,1,"roll");assertEquals(0,r.players.get(0).money);assertEquals(1505,r.players.get(1).money);assertTrue(r.players.get(0).out);assertEquals("finished",r.phase);}
+ @Test void fullRoomAndOutsideMemberRejected(){PartyRoom r=game("dice",8);assertThrows(ServiceException.class,()->cmd(r,9,"join"));assertThrows(ServiceException.class,()->cmd(r,9,"end"));assertNull(e.view(r,null,now).get("me"));}
+ @Test void longGameEnds(){PartyRoom r=game("dice",2);r.round=80;cmd(r,1,"roll");cmd(r,1,"end");assertEquals("playing",r.phase);cmd(r,2,"roll");cmd(r,2,"end");assertEquals("finished",r.phase);}
+}

@@ -3,7 +3,7 @@ package com.ruoyi.common.utils.html;
 import com.ruoyi.common.utils.StringUtils;
 
 /**
- * 转义和反转义工具类
+ * 转义和反转换工具类
  * 
  * @author ruoyi
  */

@@ -50,7 +50,7 @@ Copy-Item config/application-druid.example.yml ruoyi-admin/src/main/resources/ap
 | `UPLOAD_PATH` | 上传目录，默认 `./uploadPath` |
 | `DRUID_USERNAME` / `DRUID_PASSWORD` | 仅手动启用 Druid 控制台时配置；示例默认关闭控制台 |
 
-例如 JDBC URL 的格式为 `jdbc:mysql://localhost:3306/kangaroo_courtyard?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai`。不要把密码写进 URL 或提交到 Git。Spring Boot 不会自动读取根目录 `.env`，应由进程环境/IDE 注入变量。
+例如 JDBC URL 的格式为 `jdbc:mysql://localhost:3306/kangaroo_courtyard?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&sessionVariables=time_zone%3D'%2B08%3A00'`。**`serverTimezone=GMT%2B8` 与 `sessionVariables=time_zone=...` 两项必须保留**（与 `application-druid.yml` 里的默认值一致）：业务日期、到期关单、活动开始时间都按北京时间（+08:00）算，驱动和数据库会话时区不一致会让时间整体偏移几个小时（MySQL 的时区表默认是空的，不能写 `Asia/Shanghai` 这类名字，所以用 `GMT%2B8` 与固定偏移量）。不要把密码写进 URL 或提交到 Git。Spring Boot 不会自动读取根目录 `.env`，应由进程环境/IDE 注入变量。
 
 4. 构建与启动：
 

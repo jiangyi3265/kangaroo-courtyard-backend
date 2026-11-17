@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import org.apache.commons.lang3.ArrayUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +19,7 @@ import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.common.utils.file.FileUploadUtils;
 import com.ruoyi.common.utils.file.FileUtils;
+import com.ruoyi.common.utils.file.MimeTypeUtils;
 import com.ruoyi.framework.config.ServerConfig;
 
 /**
@@ -69,6 +71,16 @@ public class CommonController
     }
 
     /**
+     * 图片按随机文件名保存（与小程序 AppUploadController 一致）。保留原名时，"微信图片_xxx.jpg" 这类带中文、空格的路径
+     * 过不了业务侧"只能用本平台图片"的校验（KgJdbc.isPlatformImage），后台新增社区活动等会被拒；附件仍保留原名，下载时认得出来
+     */
+    private static String store(String filePath, MultipartFile file) throws Exception
+    {
+        boolean image = ArrayUtils.contains(MimeTypeUtils.IMAGE_EXTENSION, StringUtils.lowerCase(FileUploadUtils.getExtension(file)));
+        return FileUploadUtils.upload(filePath, file, MimeTypeUtils.DEFAULT_ALLOWED_EXTENSION, image);
+    }
+
+    /**
      * 通用上传请求（单个）
      */
     @PostMapping("/upload")
@@ -79,7 +91,7 @@ public class CommonController
             // 上传文件路径
             String filePath = RuoYiConfig.getUploadPath();
             // 上传并返回新文件名称
-            String fileName = FileUploadUtils.upload(filePath, file);
+            String fileName = store(filePath, file);
             String url = serverConfig.getUrl() + fileName;
             AjaxResult ajax = AjaxResult.success();
             ajax.put("url", url);
@@ -111,7 +123,7 @@ public class CommonController
             for (MultipartFile file : files)
             {
                 // 上传并返回新文件名称
-                String fileName = FileUploadUtils.upload(filePath, file);
+                String fileName = store(filePath, file);
                 String url = serverConfig.getUrl() + fileName;
                 urls.add(url);
                 fileNames.add(fileName);

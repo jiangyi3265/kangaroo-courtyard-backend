@@ -112,6 +112,9 @@ public class SecurityConfig
                 permitAllUrl.getUrls().forEach(url -> requests.antMatchers(url).permitAll());
                 // 对于登录login 注册register 验证码captchaImage 允许匿名访问
                 requests.antMatchers("/login", "/register", "/captchaImage").permitAll()
+                    // 小程序端接口：Spring Security 放行，改由 AppAuthInterceptor 用独立的
+                    // 小程序令牌体系(X-App-Token)逐个接口鉴权，避免与后台管理员凭证混用
+                    .antMatchers("/app/**").permitAll()
                     // 静态资源，可匿名访问
                     .antMatchers(HttpMethod.GET, "/", "/*.html", "/**/*.html", "/**/*.css", "/**/*.js", "/profile/**").permitAll()
                     .antMatchers("/swagger-ui.html", "/swagger-resources/**", "/webjars/**", "/*/api-docs", "/druid/**").permitAll()

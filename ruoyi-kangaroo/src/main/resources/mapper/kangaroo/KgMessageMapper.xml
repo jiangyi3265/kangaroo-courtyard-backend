@@ -1,0 +1,564 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgMessageMapper">
+
+    <resultMap type="KgMessage" id="KgMessageResult">
+        <result property="msgId"       column="msg_id"       />
+        <result property="recipientId" column="recipient_id" />
+        <result property="mode"        column="mode"         />
+        <result property="category"    column="category"     />
+        <result property="title"       column="title"        />
+        <result property="content"     column="content"      />
+        <result property="bizType"     column="biz_type"     />
+        <result property="bizId"       column="biz_id"       />
+        <result property="actorId"     column="actor_id"     />
+        <result property="route"       column="route"        />
+        <result property="readFlag"    column="read_flag"    />
+        <result property="readTime"    column="read_time"    />
+        <result property="delFlag"     column="del_flag"     />
+        <result property="createTime"  column="create_time"  />
+        <result property="nickname"    column="nickname"     />
+        <!-- 下面几列只在消息页「收到的评论 / 收到的赞」分页查询里有（selectAppMessagePage） -->
+        <result property="actorName"   column="actor_name"   />
+        <result property="actorAvatar" column="actor_avatar" />
+        <result property="postId"      column="post_id"      />
+        <result property="cover"       column="cover"        />
+        <result property="postTitle"   column="post_title"   />
+        <result property="quote"       column="quote"        />
+    </resultMap>
+
+    <sql id="selectKgMessageVo">
+        select msg_id, recipient_id, mode, category, title, content, biz_type, biz_id,
+               route, read_flag, read_time, del_flag, create_time
+        from kg_message
+    </sql>
+
+    <select id="selectKgMessageByMsgId" parameterType="Long" resultMap="KgMessageResult">
+        select msg_id, recipient_id, mode, category, title,
+               case when biz_type = 'chat_conv' then '（私信 / 群聊内容不在后台展示）' else content end as content,
+               biz_type, biz_id, route, read_flag, read_time, del_flag, create_time
+        from kg_message
+        where msg_id = #{msgId} and del_flag = '0'
+    </select>
+
+    <select id="selectKgMessageList" parameterType="KgMessage" resultMap="KgMessageResult">
+        select m.msg_id, m.recipient_id, m.mode, m.category, m.title,
+               <!-- 私信 / 群聊提醒的正文是聊天内容的前 80 字：后台不能浏览私信（设计 m5 决策 11），只给元数据 -->
+               case when m.biz_type = 'chat_conv' then '（私信 / 群聊内容不在后台展示）' else m.content end as content,
+               m.biz_type, m.biz_id,
+               m.route, m.read_flag, m.read_time, m.del_flag, m.create_time, u.nickname
+        from kg_message m
+        <!-- 用 left join：接收人被逻辑删除后消息仍要能查到，只是昵称为空 -->
+        left join kg_app_user u on u.user_id = m.recipient_id and u.del_flag = '0'
+        <where>
+            m.del_flag = '0'
+            <if test="recipientId != null"> and m.recipient_id = #{recipientId}</if>
+            <if test="mode != null and mode != ''"> and m.mode = #{mode}</if>
+            <if test="category != null and category != ''"> and m.category = #{category}</if>
+            <if test="title != null and title != ''"> and m.title like concat('%', #{title}, '%')</if>
+            <if test="readFlag != null and readFlag != ''"> and m.read_flag = #{readFlag}</if>
+            <if test="bizType != null and bizType != ''"> and m.biz_type = #{bizType}</if>
+            <if test="bizId != null"> and m.biz_id = #{bizId}</if>
+            <if test="nickname != null and nickname != ''"> and u.nickname like concat('%', #{nickname}, '%')</if>
+            <if test="params.beginTime != null and params.beginTime != ''">
+                and date_format(m.create_time,'%y%m%d') &gt;= date_format(#{params.beginTime},'%y%m%d')
+            </if>
+            <if test="params.endTime != null and params.endTime != ''">
+                and date_format(m.create_time,'%y%m%d') &lt;= date_format(#{params.endTime},'%y%m%d')
+            </if>
+        </where>
+        order by m.msg_id desc
+    </select>
+
+    <!-- One current, read-only ACL reused by all five recipient endpoints.
+         Legacy mixed s-pairs are archived and always use the reception scope. -->
+    <sql id="selectedMessageStore">
+        <bind name="selectedMessageStores" value="@com.ruoyi.kangaroo.security.AppUserContext@messageStores()"/>
+        <bind name="selectedMessageRole" value="@com.ruoyi.kangaroo.security.AppUserContext@messageRole()"/>
+        <if test="selectedMessageStores != null">
+          and (kg_message.mode &lt;&gt; 'staff' or coalesce(kg_message.biz_type,'') not in ('chat_conv','application','online_submission','online_settlement','job','stay_order','merchant_request','activity','ops_daily','ops_monthly','ops_scope')
+            or exists (select 1 from kg_store selected_store where selected_store.store_id in
+              <foreach collection="selectedMessageStores" item="selectedId" open="(" separator="," close=")">#{selectedId}</foreach>
+              and (
+                (kg_message.biz_type='chat_conv' and exists(select 1 from kg_chat_conv scoped_chat left join kg_activity scoped_activity on scoped_activity.activity_id=scoped_chat.activity_id where scoped_chat.conv_id=kg_message.biz_id and coalesce(scoped_chat.store_id,scoped_activity.store_id)=selected_store.store_id))
+                or (kg_message.biz_type in ('application','online_submission','online_settlement') and exists(select 1 from kg_application scoped_application join kg_job scoped_job on scoped_job.job_id=scoped_application.job_id where scoped_application.app_id=kg_message.biz_id and scoped_application.store_id=selected_store.store_id and (#{selectedMessageRole} not in ('online_staff','merchant_service') or scoped_job.job_type='online')))
+                or (kg_message.biz_type='job' and exists(select 1 from kg_job scoped_job where scoped_job.job_id=kg_message.biz_id and scoped_job.store_id=selected_store.store_id and (#{selectedMessageRole} not in ('online_staff','merchant_service') or scoped_job.job_type='online')))
+                or (kg_message.biz_type='stay_order' and exists(select 1 from kg_stay_order scoped_order where scoped_order.order_id=kg_message.biz_id and scoped_order.store_id=selected_store.store_id))
+                or (kg_message.biz_type='merchant_request' and exists(select 1 from kg_merchant_request scoped_request where scoped_request.request_id=kg_message.biz_id and scoped_request.store_id=selected_store.store_id))
+                or (kg_message.biz_type='activity' and exists(select 1 from kg_activity scoped_event where scoped_event.activity_id=kg_message.biz_id and scoped_event.store_id=selected_store.store_id))
+                or (kg_message.biz_type='ops_daily' and exists(select 1 from kg_ops_daily scoped_report where scoped_report.report_id=kg_message.biz_id and json_contains(scoped_report.store_ids,cast(selected_store.store_id as json)) and ((scoped_report.owner_id=#{recipientId} and scoped_report.role_code=#{selectedMessageRole}) or #{selectedMessageRole}='city_lead')))
+                or (kg_message.biz_type='ops_monthly' and exists(select 1 from kg_ops_monthly scoped_month where scoped_month.summary_id=kg_message.biz_id and json_contains(scoped_month.store_ids,cast(selected_store.store_id as json)) and ((scoped_month.owner_id=#{recipientId} and scoped_month.role_code=#{selectedMessageRole}) or #{selectedMessageRole}='city_lead')))
+                or (kg_message.biz_type='ops_scope' and #{selectedMessageRole} in ('keeper','manager','city_lead') and kg_message.route like concat('%role=',#{selectedMessageRole}) and exists(select 1 from kg_city scoped_city where scoped_city.city_id=kg_message.biz_id and (scoped_city.name=selected_store.city or scoped_city.full_name=selected_store.city)))
+              )))
+        </if>
+    </sql>
+    <!-- 历史订单通知也按当前角色过滤；所有列表、红点、已读和删除共用，用户本人的订单不受影响。 -->
+    <sql id="currentStayMessageAccess">
+        <bind name="messageStayStores" value="@com.ruoyi.kangaroo.security.AppUserContext@messageStayStores()"/>
+        <bind name="messageCityLead" value="@com.ruoyi.kangaroo.security.AppUserContext@messageCityLead()"/>
+        and (kg_message.mode&lt;&gt;'staff' or coalesce(kg_message.biz_type,'')&lt;&gt;'refund_trouble'
+            <if test="messageCityLead">or 1=1</if>)
+        and (kg_message.mode&lt;&gt;'staff'
+            or (coalesce(kg_message.biz_type,'') not in ('stay_order','service_order')
+                and coalesce(kg_message.route,'')&lt;&gt;'/pages/staff/stay-orders'
+                and coalesce(kg_message.route,'') not like '/pages/staff/stay-orders?%')
+            <if test="messageStayStores != null and messageStayStores.size() > 0">
+            or exists(select 1 from kg_store stay_message_store where stay_message_store.status='0' and stay_message_store.del_flag='0'
+                and stay_message_store.store_id in
+                <foreach collection="messageStayStores" item="stayMessageStore" open="(" separator="," close=")">#{stayMessageStore}</foreach>
+                and ((coalesce(kg_message.biz_type,'')&lt;&gt;'service_order' and exists(select 1 from kg_stay_order stay_message_order
+                        where stay_message_order.store_id=stay_message_store.store_id
+                        and ((kg_message.biz_type='stay_order' and stay_message_order.order_id=kg_message.biz_id)
+                            or (kg_message.route like '/pages/staff/stay-orders?%orderNo=%'
+                                and stay_message_order.order_no=substring_index(substring_index(concat(kg_message.route,'&amp;'),'orderNo=',-1),'&amp;',1)))))
+                    or (kg_message.biz_type='service_order' and exists(select 1 from kg_shop_order stay_message_service
+                        where stay_message_service.order_id=kg_message.biz_id and stay_message_service.store_id=stay_message_store.store_id))))
+            </if>)
+    </sql>
+    <sql id="currentMediationMessageAccess">
+        <bind name="mediationManagerStores" value="@com.ruoyi.kangaroo.security.AppUserContext@messageMediationStores('manager')"/>
+        <bind name="mediationMerchantStores" value="@com.ruoyi.kangaroo.security.AppUserContext@messageMediationStores('merchant')"/>
+        <bind name="mediationCityStores" value="@com.ruoyi.kangaroo.security.AppUserContext@messageMediationStores('city_lead')"/>
+        and (kg_message.mode&lt;&gt;'staff' or coalesce(kg_message.biz_type,'')&lt;&gt;'mediation' or exists(
+            select 1 from kg_mediation_case message_case join kg_store message_store on message_store.store_id=message_case.store_id
+            where message_case.case_id=kg_message.biz_id and message_case.user_id&lt;&gt;#{recipientId} and message_store.status='0' and message_store.del_flag='0' and (1=0
+            <if test="mediationManagerStores.size() > 0">
+              or (message_case.order_type='application' and message_case.store_id in
+                <foreach collection="mediationManagerStores" item="ms" open="(" separator="," close=")">#{ms}</foreach>
+                and not exists(select 1 from kg_staff_grant party_grant where party_grant.app_user_id=#{recipientId} and party_grant.store_id=message_case.store_id and party_grant.role_code='merchant' and party_grant.status='0' and party_grant.del_flag='0'))
+            </if>
+            <if test="mediationMerchantStores.size() > 0">
+              or message_case.store_id in <foreach collection="mediationMerchantStores" item="ms" open="(" separator="," close=")">#{ms}</foreach>
+            </if>
+            <if test="mediationCityStores.size() > 0">
+              or (message_case.store_id in <foreach collection="mediationCityStores" item="ms" open="(" separator="," close=")">#{ms}</foreach>
+                and not exists(select 1 from kg_staff_grant conflict_grant where conflict_grant.app_user_id=#{recipientId} and conflict_grant.store_id=message_case.store_id and conflict_grant.role_code&lt;&gt;'city_lead' and conflict_grant.status='0' and conflict_grant.del_flag='0'))
+            </if>
+            )))
+    </sql>
+    <sql id="currentInsuranceMessageAccess">
+      <bind name="insuranceMerchantStores" value="@com.ruoyi.kangaroo.security.AppUserContext@messageMediationStores('merchant')"/>
+      <bind name="insuranceManagerStores" value="@com.ruoyi.kangaroo.security.AppUserContext@messageMediationStores('manager')"/>
+      and (kg_message.mode&lt;&gt;'staff' or coalesce(kg_message.biz_type,'') not in ('insurance_finance','insurance_policy') or (1=0
+      <if test="insuranceMerchantStores.size() > 0">
+        or (kg_message.biz_type='insurance_finance' and exists(select 1 from kg_insurance_payment insurance_money where insurance_money.apply_id=kg_message.biz_id and insurance_money.payer_user_id=#{recipientId} and insurance_money.store_id in
+          <foreach collection="insuranceMerchantStores" item="ims" open="(" separator="," close=")">#{ims}</foreach>))
+      </if>
+      <if test="insuranceManagerStores.size() > 0">
+        or (kg_message.biz_type='insurance_policy' and exists(select 1 from kg_insurance_apply insurance_case where insurance_case.apply_id=kg_message.biz_id and insurance_case.store_id in
+          <foreach collection="insuranceManagerStores" item="ins" open="(" separator="," close=")">#{ins}</foreach>))
+      </if>))
+    </sql>
+    <sql id="currentChatReception">
+        <include refid="selectedMessageStore"/>
+        <include refid="currentStayMessageAccess"/>
+        <include refid="currentMediationMessageAccess"/>
+        <include refid="currentInsuranceMessageAccess"/>
+        and (mode&lt;&gt;'staff' or coalesce(biz_type,'') not in ('application','online_submission','online_settlement')
+            or not exists(select 1 from kg_application personal_application where personal_application.app_id=kg_message.biz_id
+                and personal_application.app_user_id=kg_message.recipient_id))
+        <!-- Only real, authorized store conversations remain in the chat bucket when private chat is closed. -->
+        and (exists(select 1 from sys_config fp where fp.config_key='kangaroo.private_chat.enabled' and binary fp.config_value='true')
+            or ((coalesce(biz_type,'') &lt;&gt; 'chat_conv' or not exists(select 1 from kg_chat_conv hidden_private where hidden_private.conv_id=kg_message.biz_id and hidden_private.conv_type='private'))
+                and (coalesce(category,'') &lt;&gt; 'chat' or (coalesce(biz_type,'')='chat_conv' and exists(select 1 from kg_chat_conv business_chat where business_chat.conv_id=kg_message.biz_id and business_chat.conv_type='store')))))
+        and (exists(select 1 from sys_config fg where fg.config_key='kangaroo.group_chat.enabled' and binary fg.config_value='true')
+            or (coalesce(category,'') &lt;&gt; 'group' and not (coalesce(biz_type,'')='chat_conv' and exists(
+                select 1 from kg_chat_conv hidden_group where hidden_group.conv_id=kg_message.biz_id and hidden_group.conv_type='group'))))
+        <!-- Restricted staff can read only business records proven to be in their current scope.
+             Unknown/legacy staff notifications fail closed for accounts carrying this role. -->
+        <!-- 授权变更通知（grant）、客服工单回复（support_ticket）只发给当事人本人、不含门店业务数据，也放行：
+             之前带线上任务专员授权的账号收到这两类员工身份消息后，列表里看不到、全部已读清不掉，业务页红点一直挂着，客服回复也看不到 -->
+        <!-- 商家服务人、城市负责人（2026-10-30）：账号只有这两种角色时和专员一样收窄；同时还是换工主理人等常规角色的账号不收窄，否则他本来的通知都看不到了。
+             merchant_request（商家需求的派单、转发、进度）、recruit_daily（换工主理人发给城市负责人的招募日报）只发给当事人，放行。
+             账号同时有常规角色时靠发送这一头兜底：StaffSupport.notifyStore、KgApplicationServiceImpl.notifyStaff 不把线下业务消息发给这家店的商家服务人。
+             切换后城市负责人有全部权限（2026-11-01）：不再收窄；发给他的只有他管的门店的事（发送一头 CityLeadScope 把关） -->
+        and (mode&lt;&gt;'staff' or (not exists(select 1 from kg_staff_grant restricted
+            where restricted.app_user_id=#{recipientId} and restricted.role_code='online_staff' and restricted.status='0' and restricted.del_flag='0')
+            and (not exists(select 1 from kg_staff_grant scoped
+                where scoped.app_user_id=#{recipientId} and (scoped.role_code='merchant_service' or (scoped.role_code='city_lead' and not exists(select 1 from kg_role_switch switched where switched.id=1 and switched.phase='new'))) and scoped.status='0' and scoped.del_flag='0')
+              or exists(select 1 from kg_staff_grant regular
+                where regular.app_user_id=#{recipientId} and regular.role_code in ('manager','keeper','staff','merchant') and regular.status='0' and regular.del_flag='0')))
+            or biz_type='chat_conv'
+            <!-- 已由 currentStayMessageAccess 验证当前身份及门店；兼任线上专员不能遮掉合法 keeper 的旅居通知。 -->
+            or biz_type in ('stay_order','service_order')
+            or kg_message.route='/pages/staff/stay-orders' or kg_message.route like '/pages/staff/stay-orders?%'
+            or biz_type in ('grant','support_ticket','notice_reply','merchant_request','recruit_daily','ops_daily','ops_monthly','ops_scope')
+            <!-- 管理员任务（2026-11-03 起可派给线上专员、商家服务人）只发给被派人本人，不含门店业务数据，放行；否则这两类账号收不到任务消息 -->
+            or biz_type='staff_task'
+            <!-- 小院评论（2026-10-31）只发给这家店的小院主理人（StaffSupport.notifyKeepers）。账号同时带专员授权时也要看得到，不然红点清不掉 -->
+            or biz_type='stay_comment'
+            <!-- 调解通知只含编号，发送时按城市范围排除关联人；打开工单再次校验当前权限。 -->
+            or biz_type in ('mediation','insurance_finance','insurance_policy')
+            <!-- 采购报销（V66）的审核结果只发给提交人本人（小院主理人）。同上：账号同时带专员授权时也要看得到 -->
+            or biz_type='reimburse'
+            <!-- 角色切换后（2026-10-30）城市负责人就是老主理人：经营日报、活动退款待审批、退款异常、钱包、生日礼物和荣誉申报要能看到。
+                 只在切换后放行、只对账号上有城市负责人授权的放行：切换前纯城市负责人的可见范围和上一版相同（生日祝福这类切换前也会发给他），其他账号不变 -->
+            or (biz_type in ('daily_report','activity_refund','refund_trouble','wallet','wallet_withdraw','birthday','gift_claim','appeal')
+                and exists(select 1 from kg_role_switch switched where switched.id=1 and switched.phase='new')
+                and exists(select 1 from kg_staff_grant lead_grant where lead_grant.app_user_id=#{recipientId} and lead_grant.role_code='city_lead' and lead_grant.status='0' and lead_grant.del_flag='0'))
+            or (biz_type in ('application','online_submission') and exists(
+                select 1 from kg_application a join kg_job j on j.job_id=a.job_id
+                join kg_staff_grant g on g.store_id=a.store_id and g.app_user_id=#{recipientId}
+                join kg_store st on st.store_id=g.store_id
+                where a.app_id=kg_message.biz_id and a.del_flag='0' and j.store_id=a.store_id
+                and g.status='0' and g.del_flag='0' and st.status='0' and st.del_flag='0'
+                and g.role_code&lt;&gt;'city_lead'
+                and (g.role_code not in ('online_staff','merchant_service') or j.job_type='online')))
+            <!-- 线上任务结算（待付款 / 确认收款 / 收款申诉，biz_id=报名ID）：商家服务人能登记付款，发送一头也发给他，这里要放行；
+                 线上专员不能登记付款，发送一头本来就不发，这里照旧不放行 -->
+            or (biz_type='online_settlement' and exists(
+                select 1 from kg_application a join kg_job j on j.job_id=a.job_id
+                join kg_staff_grant g on g.store_id=a.store_id and g.app_user_id=#{recipientId}
+                join kg_store st on st.store_id=g.store_id
+                where a.app_id=kg_message.biz_id and a.del_flag='0' and j.store_id=a.store_id and j.job_type='online'
+                and g.status='0' and g.del_flag='0' and st.status='0' and st.del_flag='0'
+                and g.role_code not in ('city_lead','online_staff')))
+            <!-- 线上任务的平台审核结果、草稿到期没上架、专员提交任务（biz_type=job，点开落在线上任务页）：
+                 任务确实是线上任务、收件人在任务所属门店有在职授权才放行。2026-10 起专员也能发布本店线上任务，
+                 之前这类消息对带专员授权的账号整体隐藏，专员看不到自己发的任务审没审过。线下岗位的 job 通知（去岗位管理）照旧不放行。
+                 线上任务到期关闭、还有接单申请没审核时（KgOnlineTaskService.notifyClosed）点开是线上接单的报名列表（jobType=online），同样放行 -->
+            or (biz_type='job' and (kg_message.route like '/pages/staff/online-jobs?%' or kg_message.route like '/pages/staff/applications?%jobType=online%') and exists(
+                select 1 from kg_job j join kg_staff_grant g on g.store_id=j.store_id and g.app_user_id=#{recipientId}
+                join kg_store st on st.store_id=g.store_id
+                where j.job_id=kg_message.biz_id and j.job_type='online' and j.del_flag='0'
+                and g.role_code&lt;&gt;'city_lead'
+                and g.status='0' and g.del_flag='0' and st.status='0' and st.del_flag='0')))
+
+        and (biz_type &lt;&gt; 'chat_conv' or biz_type is null or exists(
+            select 1 from kg_chat_conv c join kg_chat_member cm on cm.conv_id=c.conv_id
+            where c.conv_id=kg_message.biz_id and c.conv_type&lt;&gt;'store'
+            and cm.app_user_id=#{recipientId} and cm.left_time is null
+            and ((kg_message.mode='staff' and cm.role in ('store','admin')) or (kg_message.mode='user' and cm.role not in ('store','admin')))
+            and (cm.role not in ('store','admin') or exists(
+                select 1 from kg_activity a join kg_staff_grant g on g.store_id=a.store_id
+                join kg_store st on st.store_id=g.store_id
+                where a.activity_id=c.activity_id and g.app_user_id=#{recipientId}
+                and g.status='0' and g.del_flag='0' and g.role_code not in ('online_staff','merchant_service','city_lead')
+                and st.status='0' and st.del_flag='0')
+              <!-- 城市负责人顶上进过的会话（KgChatReception.steppingIn）：能不能进由接口按范围现算，这里只认他现在还是城市负责人 -->
+              or (exists(select 1 from kg_role_switch switched where switched.id=1 and switched.phase='new')
+                and exists(select 1 from kg_staff_grant lead_seat where lead_seat.app_user_id=#{recipientId} and lead_seat.role_code='city_lead' and lead_seat.status='0' and lead_seat.del_flag='0')))
+        ) or exists(
+            select 1 from kg_chat_conv c join kg_chat_member cm on cm.conv_id=c.conv_id
+            join kg_app_user cu on cu.user_id=cm.app_user_id and cu.status='0' and cu.del_flag='0'
+            join kg_store st on st.store_id=c.store_id and st.status='0' and st.del_flag='0'
+            join kg_chat_member applicant on applicant.conv_id=c.conv_id and applicant.role='member'
+            join kg_app_user au on au.user_id=applicant.app_user_id and au.status='0' and au.del_flag='0'
+            where c.conv_id=kg_message.biz_id and c.conv_type='store'
+            and cm.app_user_id=#{recipientId} and cm.left_time is null
+            and ((kg_message.mode='staff' and cm.role in ('store','admin')) or (kg_message.mode='user' and cm.role not in ('store','admin')))
+            and (select count(*) from kg_chat_member only_one where only_one.conv_id=c.conv_id and only_one.role='member')=1
+            and (c.pair_key=concat('s',c.store_id,'-u',applicant.app_user_id)
+                 or (c.source='online_task' and c.pair_key=concat('o',c.store_id,'-u',applicant.app_user_id))
+                 or (c.source='progress' and c.pair_key=concat('offline:',c.store_id,':u',applicant.app_user_id)))
+            and ((cm.role='member' and cm.app_user_id=applicant.app_user_id)
+              or (cm.role='store' and exists(select 1 from kg_role_switch switched where switched.id=1 and switched.phase='new')
+                and exists(select 1 from kg_staff_grant lead_seat where lead_seat.app_user_id=cm.app_user_id and lead_seat.role_code='city_lead' and lead_seat.status='0' and lead_seat.del_flag='0'))
+              or (cm.role='store' and exists(
+                select 1 from kg_staff_grant g where g.store_id=c.store_id and g.app_user_id=cm.app_user_id
+                and g.status='0' and g.del_flag='0' and g.role_code not in ('merchant_service','city_lead') and (g.role_code&lt;&gt;'online_staff' or c.source='online_task')
+                <!-- 商家需求自动补的换工主理人只进线下报名的会话，线上任务会话不在席（和 KgChatReception.staff 一致） -->
+                and (g.role_code&lt;&gt;'manager' or coalesce(g.granted_by,'')&lt;&gt;'system:merchant_request' or (c.source='progress' and c.pair_key=concat('offline:',c.store_id,':u',applicant.app_user_id)))
+                and (
+                    (c.source='progress' and c.pair_key=concat('offline:',c.store_id,':u',applicant.app_user_id))
+                    or not exists(select 1 from kg_chat_reception cr where cr.store_id=c.store_id and (cr.first_id is not null or cr.second_id is not null))
+                    or exists(select 1 from kg_chat_reception cr where cr.store_id=c.store_id and (cr.first_id=cm.app_user_id or cr.second_id=cm.app_user_id))
+                )
+            )))
+        ))
+    </sql>
+
+    <!-- 私信 / 群聊每个会话只显示最新的一行（2026-10-15）：现在每人每个身份下每个会话只写一行；之前提醒读掉后再来消息会另插一行，
+         同一会话在列表里越积越多，这些历史上多出来的旧行在这里隐藏（不删数据，回退旧包即恢复原样；旧行都是已读的）。
+         只能用在 SELECT 里：markRead / markAllRead 是 UPDATE，子查询引用同一张表 MySQL 会报 1093，所以不放进 currentChatReception。 -->
+    <sql id="latestChatRow">
+        and (biz_type is null or biz_type &lt;&gt; 'chat_conv' or not exists(
+            select 1 from kg_message newer
+            where newer.biz_type='chat_conv' and newer.biz_id=kg_message.biz_id
+            and newer.recipient_id=kg_message.recipient_id and newer.mode=kg_message.mode
+            and newer.del_flag='0' and newer.msg_id&gt;kg_message.msg_id))
+    </sql>
+
+    <!-- 消息页分组（2026-10-15 改版）：页面上方三个入口 + 下面一个统一列表，每条消息只属于一组，只用本行自己的列（UPDATE 里也能用）。
+         用户身份：comment 收到的评论 / like 收到的赞 / system 系统通知 / main 列表（订单、报名面试签约进度、活动通知、私信、群聊）；
+           活动的报名成功、集合提醒、活动取消（category=system、biz_type=activity…）按主人的决定放进列表，不进系统通知。
+         员工身份：system 系统通知 / apply 报名（报名、面试、签约、员工待办和活动有新报名）/ order 订单 / main 列表（和报名人、顾客的私信、群聊）。
+         biz_type 可能为空，先 coalesce 成空串，否则 like 得到 null，整个 when 判不出来。 -->
+    <sql id="bucketOf">
+        (case
+            when category in ('comment','like') then category
+            when mode='staff' and (category in ('apply','interview','contract','staff')
+                or (category='system' and coalesce(biz_type,'') like 'activity%')) then 'apply'
+            when mode='staff' and category='order' then 'order'
+            when category='system' and not (mode='user' and coalesce(biz_type,'') like 'activity%') then 'system'
+            else 'main'
+        end)
+    </sql>
+
+    <!-- 评论 / 赞通知只在对象还在时显示（2026-10-15）：动态被删、被隐藏、下线，评论被删、被隐藏，
+         或者触发人和收件人之间任一方拉黑了对方，这条通知就不显示、也不算未读；恢复后又会出现。不删数据，也不用在删评论、审核里逐个去删消息。
+         biz_type：post（V43 改归的老评论通知）/ post_like → biz_id 是动态；comment（评论通知，biz_id 是这条评论）/ comment_like（被赞的评论）。
+         2026-10-16：触发人账号被停用或已注销的也不显示、不算未读（列表里会露出停用账号的昵称头像）；没记触发人的老通知照旧。
+         只用在 SELECT 里（列表、红点、分组计数），子查询不引用 kg_message 自己；markAllRead 不带它，不会碰到 MySQL 1093。 -->
+    <sql id="interactionAlive">
+        and (category not in ('comment','like') or (
+            ((biz_type in ('post','post_like') and exists(
+                select 1 from kg_post ip where ip.post_id=kg_message.biz_id and ip.del_flag='0' and ip.status='online'))
+            or (biz_type in ('comment','comment_like') and exists(
+                select 1 from kg_post_comment ic join kg_post ip on ip.post_id=ic.post_id
+                where ic.comment_id=kg_message.biz_id and ic.status='visible' and ic.del_flag='0'
+                and ip.del_flag='0' and ip.status='online')))
+            and (actor_id is null or not exists(
+                select 1 from kg_user_block ib
+                where (ib.user_id=kg_message.recipient_id and ib.blocked_id=kg_message.actor_id)
+                   or (ib.user_id=kg_message.actor_id and ib.blocked_id=kg_message.recipient_id)))
+            and (actor_id is null or exists(
+                select 1 from kg_app_user iu
+                where iu.user_id=kg_message.actor_id and iu.status='0' and iu.del_flag='0'))))
+    </sql>
+
+    <!-- 已读满 72 小时只从用户收件箱隐藏，保留业务记录。旧数据没有阅读时间时不能猜测过期时间。 -->
+    <sql id="inboxRetention">
+        <!-- Read history remains accessible until explicitly deleted by its recipient. -->
+    </sql>
+
+    <select id="selectAppMessages" resultMap="KgMessageResult">
+        <include refid="selectKgMessageVo"/>
+        where recipient_id = #{recipientId} and mode = #{mode} and del_flag = '0'
+        <include refid="currentChatReception"/>
+        <include refid="latestChatRow"/>
+        <include refid="interactionAlive"/>
+        <include refid="inboxRetention"/>
+        <!-- category 为空是“全部”页签，不加条件 -->
+        <if test="category != null and category != ''"> and category = #{category}</if>
+        <!-- 按最近时间排：会话有新消息时那一行的 create_time 会更新，要浮到最上面（之前按 msg_id，更新过的会话沉在原位） -->
+        order by create_time desc, msg_id desc
+    </select>
+
+    <sql id="applicationNoticeScope">
+        recipient_id = #{recipientId} and mode = 'user' and del_flag = '0'
+        and biz_type = 'application' and biz_id = #{appId}
+        and exists (select 1 from kg_application own_app where own_app.app_id = #{appId}
+            and own_app.app_user_id = #{recipientId} and own_app.del_flag = '0')
+    </sql>
+
+    <select id="selectApplicationNotices" resultMap="KgMessageResult">
+        <include refid="selectKgMessageVo"/>
+        where <include refid="applicationNoticeScope"/>
+        <include refid="inboxRetention"/>
+        <if test="before != null">and msg_id &lt; #{before}</if>
+        order by msg_id desc limit #{limit}
+    </select>
+
+    <select id="countApplicationUnread" resultType="int">
+        select count(1) from kg_message
+        where <include refid="applicationNoticeScope"/> and read_flag = '0'
+    </select>
+
+    <select id="selectApplicationChat" resultMap="KgMessageResult">
+        <include refid="selectKgMessageVo"/>
+        where recipient_id = #{recipientId} and mode = 'user' and del_flag = '0' and biz_type = 'chat_conv'
+        <include refid="currentChatReception"/>
+        <include refid="latestChatRow"/>
+        <include refid="inboxRetention"/>
+        and exists (select 1 from kg_application own_app join kg_chat_conv scoped_chat
+            on scoped_chat.store_id = own_app.store_id and scoped_chat.conv_id = kg_message.biz_id
+            where own_app.app_id = #{appId} and own_app.app_user_id = #{recipientId} and own_app.del_flag = '0'
+            and scoped_chat.conv_type = 'store' and scoped_chat.source = 'progress'
+            and scoped_chat.pair_key = concat('offline:', own_app.store_id, ':u', #{recipientId}))
+        order by create_time desc, msg_id desc limit 1
+    </select>
+
+    <select id="countUnread" resultType="int">
+        select count(1) from kg_message
+        where recipient_id = #{recipientId} and mode = #{mode} and read_flag = '0' and del_flag = '0'
+        <include refid="currentChatReception"/>
+        <include refid="latestChatRow"/>
+        <include refid="interactionAlive"/>
+    </select>
+
+    <select id="countByCategory" resultType="java.util.Map">
+        select category,
+               count(1) as total,
+               sum(case when read_flag = '0' then 1 else 0 end) as unread
+        from kg_message
+        where recipient_id = #{recipientId} and mode = #{mode} and del_flag = '0'
+        <include refid="currentChatReception"/>
+        <include refid="latestChatRow"/>
+        <include refid="interactionAlive"/>
+        <include refid="inboxRetention"/>
+        group by category
+    </select>
+
+    <!-- 消息页一组一页（2026-10-15）：按最近时间排，调用方多取一条判断还有没有下一页。
+         评论 / 赞两类再连表带出触发人昵称、头像，动态首图、标题，被回复 / 被赞的那条评论片段；
+         先在 kg_message 里筛出这一页（规则片段里引用的是 kg_message 本身），再连表，连表只作用于这一页的几十行。 -->
+    <select id="selectAppMessagePage" resultMap="KgMessageResult">
+        select x.msg_id, x.recipient_id, x.mode, x.category, x.title, x.content, x.biz_type, x.biz_id, x.actor_id,
+               x.route, x.read_flag, x.read_time, x.del_flag, x.create_time,
+               <!-- 没填昵称时和社区作者一样写「用户{id}」 -->
+               case when au.user_id is null then null
+                    when au.nickname is null or au.nickname = '' then concat('用户', au.user_id)
+                    else au.nickname end as actor_name,
+               au.avatar as actor_avatar,
+               ip.post_id,
+               <!-- 首图：images 是逗号分隔的平台图片路径 -->
+               nullif(substring_index(coalesce(ip.images, ''), ',', 1), '') as cover,
+               coalesce(nullif(ip.title, ''), left(ip.content, 30)) as post_title,
+               <!-- 赞评论：被赞的那条评论；回复：被回复的那条（库里只记了楼层和回复对象，取楼里这个人在这条回复之前最近的一条） -->
+               case when x.biz_type = 'comment_like' then left(ic.content, 60)
+                    when x.biz_type = 'comment' and ic.reply_user_id is not null then (
+                        select left(rq.content, 60) from kg_post_comment rq
+                        where rq.post_id=ic.post_id and rq.app_user_id=ic.reply_user_id
+                        and (rq.comment_id=ic.parent_id or rq.parent_id=ic.parent_id)
+                        and rq.comment_id &lt; ic.comment_id and rq.status='visible' and rq.del_flag='0'
+                        order by rq.comment_id desc limit 1)
+                    else null end as quote
+        from (
+            select msg_id, recipient_id, mode, category, title, content, biz_type, biz_id, actor_id,
+                   route, read_flag, read_time, del_flag, create_time
+            from kg_message
+            where recipient_id = #{recipientId} and mode = #{mode} and del_flag = '0'
+            <include refid="currentChatReception"/>
+            <include refid="latestChatRow"/>
+            <include refid="interactionAlive"/>
+            <include refid="inboxRetention"/>
+            <if test="category != null and category != ''"> and category = #{category}</if>
+            <if test="bucket != null and bucket != ''"> and <include refid="bucketOf"/> = #{bucket}</if>
+            order by create_time desc, msg_id desc
+            limit #{offset}, #{limit}
+        ) x
+        left join kg_app_user au on x.category in ('comment','like') and au.user_id=x.actor_id
+        left join kg_post_comment ic on x.category in ('comment','like') and x.biz_type in ('comment','comment_like') and ic.comment_id=x.biz_id
+        left join kg_post ip on x.category in ('comment','like')
+            and ip.post_id=(case when x.biz_type in ('comment','comment_like') then ic.post_id else x.biz_id end)
+        order by x.create_time desc, x.msg_id desc
+    </select>
+
+    <!-- 消息页各组的总数与未读数：口径和列表、红点一样（同一套接待权限、会话只算最新一行、互动对象还在） -->
+    <select id="countByBucket" resultType="java.util.Map">
+        select t.bucket, count(1) as total, sum(case when t.read_flag = '0' then 1 else 0 end) as unread
+        from (
+            select <include refid="bucketOf"/> as bucket, read_flag
+            from kg_message
+            where recipient_id = #{recipientId} and mode = #{mode} and del_flag = '0'
+            <include refid="currentChatReception"/>
+            <include refid="latestChatRow"/>
+            <include refid="interactionAlive"/>
+            <include refid="inboxRetention"/>
+        ) t
+        group by t.bucket
+    </select>
+
+    <insert id="insertKgMessage" parameterType="KgMessage" useGeneratedKeys="true" keyProperty="msgId">
+        insert into kg_message
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="recipientId != null">recipient_id,</if>
+            <if test="mode != null">mode,</if>
+            <if test="category != null">category,</if>
+            <if test="title != null">title,</if>
+            <if test="content != null">content,</if>
+            <if test="bizType != null">biz_type,</if>
+            <if test="bizId != null">biz_id,</if>
+            <if test="actorId != null">actor_id,</if>
+            <if test="route != null">route,</if>
+            <if test="readFlag != null">read_flag,</if>
+            <if test="delFlag != null">del_flag,</if>
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="recipientId != null">#{recipientId},</if>
+            <if test="mode != null">#{mode},</if>
+            <if test="category != null">#{category},</if>
+            <if test="title != null">#{title},</if>
+            <if test="content != null">#{content},</if>
+            <if test="bizType != null">#{bizType},</if>
+            <if test="bizId != null">#{bizId},</if>
+            <if test="actorId != null">#{actorId},</if>
+            <if test="route != null">#{route},</if>
+            <if test="readFlag != null">#{readFlag},</if>
+            <if test="delFlag != null">#{delFlag},</if>
+            sysdate()
+        </trim>
+    </insert>
+
+    <update id="markRead">
+        update kg_message set read_flag = '1', read_time = sysdate()
+        where msg_id = #{msgId} and recipient_id = #{recipientId} and (read_flag = '0' or read_time is null) and del_flag = '0'
+        <include refid="currentChatReception"/>
+    </update>
+
+    <select id="selectVisibleMessage" resultMap="KgMessageResult">
+        <include refid="selectKgMessageVo"/>
+        where msg_id = #{msgId} and recipient_id = #{recipientId} and mode = #{mode} and del_flag = '0'
+        <include refid="currentChatReception"/>
+        <include refid="interactionAlive"/>
+    </select>
+
+    <select id="selectOwnMessageForDelete" resultMap="KgMessageResult">
+        <include refid="selectKgMessageVo"/>
+        where msg_id = #{msgId} and recipient_id = #{recipientId} and mode = #{mode} and del_flag = '0'
+        <include refid="currentChatReception"/>
+        for update
+    </select>
+
+    <update id="deleteOwnMessage">
+        update kg_message set del_flag = '2'
+        where recipient_id = #{recipientId} and mode = #{mode} and del_flag = '0'
+        and (msg_id = #{msgId}
+            <if test="chatId != null">or (biz_type = 'chat_conv' and biz_id = #{chatId} and msg_id &lt; #{msgId})</if>)
+        <include refid="currentChatReception"/>
+    </update>
+
+    <!-- bucket 为空 = 全部分组（老版本「全部已读」）；分组条件只用本行自己的列，不引用 kg_message 自己（MySQL 1093）。
+         maxId（2026-10-16）：只读掉这个消息ID及以前的（消息子页带第一页最大的ID，进来之后新来的不算看过）；不带 = 和以前一样 -->
+    <update id="markAllRead">
+        update kg_message set read_flag = '1', read_time = sysdate()
+        where recipient_id = #{recipientId} and mode = #{mode} and read_flag = '0' and del_flag = '0'
+        <include refid="currentChatReception"/>
+        <if test="bucket != null and bucket != ''"> and <include refid="bucketOf"/> = #{bucket}</if>
+        <if test="maxId != null"> and msg_id &lt;= #{maxId}</if>
+    </update>
+
+    <!-- 标已读之前先读出还没读的消息ID（2026-10-16）：消息子页第一页一到手就整组标已读，往下翻的几页取回来已经是已读，
+         靠这份ID记住「进来那一刻没读」，小红点和「新的」一段才不会从第 2 页起丢掉。条件和 markAllRead 一样，新的在前、最多 limit 个 -->
+    <select id="selectUnreadIds" resultType="java.lang.Long">
+        select msg_id from kg_message
+        where recipient_id = #{recipientId} and mode = #{mode} and read_flag = '0' and del_flag = '0'
+        <include refid="currentChatReception"/>
+        <if test="bucket != null and bucket != ''"> and <include refid="bucketOf"/> = #{bucket}</if>
+        <if test="maxId != null"> and msg_id &lt;= #{maxId}</if>
+        order by msg_id desc
+        limit #{limit}
+    </select>
+
+
+    <sql id="staffApplicationInbox">
+        recipient_id=#{recipientId} and mode='staff' and del_flag='0'
+        and <include refid="bucketOf"/>='apply'
+        <include refid="currentChatReception"/>
+    </sql>
+    <sql id="applicantOfNotice">
+        case when biz_type in ('application','online_submission','online_settlement') then
+          (select app_user_id from kg_application where app_id=kg_message.biz_id and del_flag='0')
+        end
+    </sql>
+    <select id="selectStaffApplicationThreads" resultType="java.util.Map">
+        select m.msg_id id,m.title,m.content,m.route,m.create_time createTime,
+               t.personId,t.threadCount,t.unreadCount,
+               coalesce(nullif(u.nickname,''),concat('报名人',t.personId)) personName
+        from (
+          select max(q.msg_id) latestId,q.personId,count(*) threadCount,sum(q.read_flag='0') unreadCount,max(q.create_time) latestTime
+          from (select msg_id,read_flag,create_time,<include refid="applicantOfNotice"/> personId from kg_message
+                where <include refid="staffApplicationInbox"/>) q
+          group by q.personId,case when q.personId is null then q.msg_id else 0 end
+          order by latestTime desc,latestId desc limit #{offset},#{limit}
+        ) t join kg_message m on m.msg_id=t.latestId left join kg_app_user u on u.user_id=t.personId
+        order by t.latestTime desc,t.latestId desc
+    </select>
+    <select id="selectStaffApplicationThreadMessages" resultMap="KgMessageResult">
+        <include refid="selectKgMessageVo"/> where <include refid="staffApplicationInbox"/>
+        and <include refid="applicantOfNotice"/>=#{personId}
+        order by create_time desc,msg_id desc limit #{offset},#{limit}
+    </select>
+</mapper>

@@ -95,6 +95,7 @@ public class SysProfileController extends BaseController
         String oldPassword = params.get("oldPassword");
         String newPassword = params.get("newPassword");
         LoginUser loginUser = getLoginUser();
+        SecurityUtils.checkPasswordLength(newPassword);
         Long userId = loginUser.getUserId();
         SysUser user = userService.selectUserById(userId);
         String password = user.getPassword();

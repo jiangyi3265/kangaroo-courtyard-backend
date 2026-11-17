@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgJobFavoriteMapper">
+
+    <resultMap type="KgJobFavorite" id="KgJobFavoriteResult">
+        <result property="favId"      column="fav_id"      />
+        <result property="appUserId"  column="app_user_id" />
+        <result property="jobId"      column="job_id"      />
+        <result property="createTime" column="create_time" />
+    </resultMap>
+
+    <!-- insert ignore 交给唯一键 uk_fav_user_job 去重：重复点收藏是常见误操作，不值得让前端吃一个异常 -->
+    <insert id="insertIgnore" parameterType="KgJobFavorite" useGeneratedKeys="true" keyProperty="favId">
+        insert ignore into kg_job_favorite (app_user_id, job_id, create_time)
+        values (#{appUserId}, #{jobId}, sysdate())
+    </insert>
+
+    <!-- 本表无 del_flag，取消收藏直接物理删除 -->
+    <delete id="deleteByUserAndJob">
+        delete from kg_job_favorite where app_user_id = #{appUserId} and job_id = #{jobId}
+    </delete>
+
+    <select id="countByUserAndJob" resultType="int">
+        select count(1) from kg_job_favorite where app_user_id = #{appUserId} and job_id = #{jobId}
+    </select>
+
+    <select id="selectJobIdsByUser" resultType="java.lang.Long">
+        <!--
+          必须和 KgJobMapper.selectAppJobList 用同一套可见性谓词。
+          早先这里只按 app_user_id 查，导致岗位下架或门店停用后，
+          列表和详情都已经隐藏，唯独"我的收藏"还在展示，点进去必报错。
+          2026-11-09 验收改口径：岗位关了 / 门店停了也留在收藏里（控制器标「已结束招聘」，详情对收藏过的人只读可看），
+          否则收藏凭空消失、想取消都找不到；只排除已删除和草稿。
+        -->
+        select f.job_id
+        from kg_job_favorite f
+        join kg_job j on j.job_id = f.job_id
+         and j.del_flag = '0' and j.status in ('published', 'paused', 'closed')
+        where f.app_user_id = #{appUserId}
+        order by f.fav_id desc
+    </select>
+
+</mapper>

@@ -1,0 +1,726 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.kangaroo.mapper.KgJobMapper">
+
+    <resultMap type="KgJob" id="KgJobResult">
+        <result property="sortNo" column="sort_no" />
+        <result property="urgentLevel" column="urgent_level" />
+        <result property="urgentDeadline" column="urgent_deadline" />
+        <result property="jobId"         column="job_id"         />
+        <result property="storeId"       column="store_id"       />
+        <result property="recruitStoreId" column="recruit_store_id" />
+        <result property="recruitStoreName" column="recruit_store_name" />
+        <result property="recruitSafeCert" column="recruit_safe_cert" />
+        <result property="recruitStoreCover" column="recruit_store_cover" />
+        <result property="jobType"       column="job_type"       />
+        <result property="workKind"      column="work_kind"      />
+        <result property="genderMaleCount" column="gender_male_count" />
+        <result property="genderFemaleCount" column="gender_female_count" />
+        <result property="genderPref"    column="gender_pref"    />
+        <result property="restMode"      column="rest_mode"      />
+        <result property="roomType"      column="room_type"      />
+        <result property="title"         column="title"          />
+        <result property="cover"         column="cover"          />
+        <result property="images"        column="images"         />
+        <result property="mealAllowance" column="meal_allowance" />
+        <result property="mealAllowanceUnit" column="meal_allowance_unit" />
+        <result property="petStatus"     column="pet_status"     />
+        <result property="petImages"     column="pet_images"     />
+        <result property="lodgingImages" column="lodging_images" />
+        <result property="lodgingVideo"  column="lodging_video"  />
+        <result property="lodgingVideoCover" column="lodging_video_cover" />
+        <result property="city"          column="city"           />
+        <result property="address"       column="address"        />
+        <result property="latitude"      column="latitude"       />
+        <result property="longitude"     column="longitude"      />
+        <result property="salaryType"    column="salary_type"    />
+        <result property="salaryMin"     column="salary_min"     />
+        <result property="salaryMax"     column="salary_max"     />
+        <result property="salaryUnit"    column="salary_unit"    />
+        <result property="bonusDesc"     column="bonus_desc"     />
+        <result property="commissionDesc" column="commission_desc" />
+        <result property="settleDesc"    column="settle_desc"    />
+        <result property="startDate"     column="start_date"     />
+        <result property="minDays"       column="min_days"       />
+        <result property="dailyHours"    column="daily_hours"    />
+        <result property="shiftDesc"     column="shift_desc"     />
+        <result property="boardType"     column="board_type"     />
+        <result property="boardDesc"     column="board_desc"     />
+        <result property="insuranceFlag" column="insurance_flag" />
+        <result property="monthRedpacket" column="month_redpacket" />
+        <result property="headcount"     column="headcount"      />
+        <result property="hiredCount"    column="hired_count"    />
+        <result property="reservedCount" column="reserved_count" />
+        <result property="appliedCount"  column="applied_count"  />
+        <result property="tags"          column="tags"           />
+        <result property="content"       column="content"        />
+        <result property="requirement"   column="requirement"    />
+        <result property="status"        column="status"         />
+        <result property="publishTime"   column="publish_time"   />
+        <result property="closeTime"     column="close_time"     />
+        <result property="shiftTime" column="shift_time" />
+        <result property="trainDesc" column="train_desc" />
+        <result property="probation" column="probation" />
+        <result property="benefits" column="benefits" />
+        <result property="deliverDesc" column="deliver_desc" />
+        <result property="estHours" column="est_hours" />
+        <result property="remoteFlag" column="remote_flag" />
+        <result property="publisherName" column="publisher_name" />
+        <result property="delFlag"       column="del_flag"       />
+        <result property="createBy"      column="create_by"      />
+        <result property="createTime"    column="create_time"    />
+        <result property="updateBy"      column="update_by"      />
+        <result property="updateTime"    column="update_time"    />
+        <result property="remark"        column="remark"         />
+        <result property="storeName"     column="store_name"     />
+        <result property="safeCert"      column="safe_cert"      />
+        <result property="storeCover"    column="store_cover"    />
+        <result property="source"        column="source"         />
+    </resultMap>
+
+    <!--
+      门店用 left join：门店被逻辑删除时岗位行仍要出现在后台列表里，否则会出现"查不到也删不掉"的孤儿数据。
+      hired_count：线上任务不走「确认录用」，这一列永远是 0，名额从来不生效（名额 1 人的任务有人接了，列表、详情仍写「还招 1 人」、照样受理报名，
+      门店通过时才说名额已满）。线上任务改按「进行中的接单人数」算，与门店审核通过接单时的名额判断（KgApplicationServiceImpl.audit）同一口径；
+      小程序列表、详情和提交报名都读这里，于是三处一致。统计列本身不动，increaseHiredCount 等仍只维护线下岗位
+    -->
+    <sql id="displayOrder">
+        <bind name="jobDisplayOrder" value="@com.ruoyi.kangaroo.ext.user.KgJobDisplayOrder@sql()"/>
+        order by ${jobDisplayOrder}
+    </sql>
+    <sql id="selectKgJobVo">
+        <bind name="jobEffectiveUrgency" value="@com.ruoyi.kangaroo.ext.user.KgJobDisplayOrder@effectiveUrgency()"/>
+        select j.sort_no, ${jobEffectiveUrgency} urgent_level, j.urgent_deadline, j.job_id, j.store_id, j.recruit_store_id, j.job_type, j.work_kind, j.title, j.cover, j.images, j.city, j.address, j.latitude, j.longitude,
+               j.salary_type, j.salary_min, j.salary_max, j.salary_unit, j.bonus_desc, j.commission_desc, j.settle_desc,
+               j.start_date, j.min_days, j.daily_hours, j.shift_desc, j.board_type, j.board_desc,
+               j.gender_pref, j.rest_mode, j.room_type, j.gender_male_count, j.gender_female_count,
+               j.meal_allowance, j.meal_allowance_unit, j.pet_status, j.pet_images, j.lodging_images, j.lodging_video, j.lodging_video_cover,
+               j.shift_time, j.train_desc, j.probation, j.benefits,
+               j.deliver_desc, j.est_hours, j.remote_flag, j.publisher_name,
+               j.insurance_flag, j.month_redpacket, j.headcount,
+               case when j.job_type = 'online' then (select count(1) from kg_application oa where oa.job_id = j.job_id and oa.del_flag = '0'
+                   and oa.status in ('review_passed', 'interview_booked', 'interview_done', 'store_confirmed', 'user_confirmed', 'contract_signed', 'onboarded'))
+                   else j.hired_count end hired_count,
+               (select count(1) from kg_application ra where ra.job_id = j.job_id and ra.del_flag = '0'
+                   and ra.status not in ('review_rejected', 'withdrawn', 'terminated')) reserved_count,
+               j.applied_count, j.tags,
+               j.content, j.requirement, j.status, j.publish_time, j.close_time, j.del_flag,
+               j.create_by, j.create_time, j.update_by, j.update_time, j.remark, j.source,
+               s.store_name, s.safe_cert, s.cover store_cover,
+               rs.store_name recruit_store_name, rs.safe_cert recruit_safe_cert, rs.cover recruit_store_cover
+        from kg_job j
+        left join kg_store s on s.store_id = j.store_id and s.del_flag = '0'
+        left join kg_store rs on rs.store_id = j.recruit_store_id and rs.del_flag = '0'
+    </sql>
+
+    <select id="selectKgJobByJobId" parameterType="Long" resultMap="KgJobResult">
+        <include refid="selectKgJobVo"/>
+        where j.job_id = #{jobId} and j.del_flag = '0'
+    </select>
+
+    <select id="lockRecruitment" parameterType="Long" resultType="Long" flushCache="true" useCache="false">
+        select job_id from kg_job where job_id = #{jobId} and del_flag = '0' for update
+    </select>
+
+    <select id="selectKgJobList" parameterType="KgJob" resultMap="KgJobResult">
+        <include refid="selectKgJobVo"/>
+        <where>
+            j.del_flag = '0'
+            <if test="title != null and title != ''"> and j.title like concat('%', #{title}, '%')</if>
+            <if test="storeId != null"> and j.store_id = #{storeId}</if>
+            <if test="jobType != null and jobType != ''"> and j.job_type = #{jobType}</if>
+            <if test="workKind != null and workKind != ''"> and j.work_kind = #{workKind}</if>
+            <if test="city != null and city != ''"> and j.city = #{city}</if>
+            <if test="status != null and status != ''"> and j.status = #{status}</if>
+            <if test="safeCert != null and safeCert != ''"> and s.safe_cert = #{safeCert}</if>
+            <if test="params.beginTime != null and params.beginTime != ''">
+                and date_format(j.create_time,'%y%m%d') &gt;= date_format(#{params.beginTime},'%y%m%d')
+            </if>
+            <if test="params.endTime != null and params.endTime != ''">
+                and date_format(j.create_time,'%y%m%d') &lt;= date_format(#{params.endTime},'%y%m%d')
+            </if>
+        </where>
+        <include refid="displayOrder"/>
+    </select>
+
+    <!--
+      小程序列表。published/paused 这一层过滤是硬约束，不受入参影响：
+      params.statusList 只能在这两个状态里再收窄（例如只看招聘中），
+      传 draft/closed 进来会查不到数据，防止调用方误把未发布岗位透出到 C 端。
+    -->
+    <select id="selectAppJobList" parameterType="KgJob" resultMap="KgJobResult">
+        <include refid="selectKgJobVo"/>
+        <where>
+            j.del_flag = '0'
+            and j.status in ('published', 'paused')
+            and (j.recruit_store_id is null or (rs.status = '0' and rs.del_flag = '0'))
+            <!--
+              门店停用或删除后，它的岗位不应再出现在小程序里。
+              后台列表（selectKgJobList）不加这层过滤，运营仍要能看到并处理这些岗位。
+            -->
+            and exists (select 1 from kg_store st
+                        where st.store_id = j.store_id and st.status = '0' and st.del_flag = '0')
+            <!--
+              线上任务过了截止时间就不再接单，也不再列出（之前状态一直是「招聘中」，照样挂在列表里，用户填完报名表才被拒）。
+              定时任务随后会把它关闭（KgOnlineTaskService.closeExpiredTasks），这里先挡住两次扫描之间的空档
+            -->
+            and not exists (select 1 from kg_online_task ot
+                            where ot.job_id = j.job_id and ot.deadline_time is not null and ot.deadline_time &lt; now())
+            <if test="params.statusList != null and params.statusList.size() &gt; 0">
+                and j.status in
+                <foreach item="statusItem" collection="params.statusList" open="(" separator="," close=")">
+                    #{statusItem}
+                </foreach>
+            </if>
+            <!--
+              关键词（2026-10-16 第二轮改版，规则匹配，不是 AI；拆词和词表见 KgJobKeyword）：
+              每一组条件都要满足（空格、逗号隔开的几个词是「并且」）；一组里任一写法出现在标题、标签、地址、介绍里就算，
+              或者岗位城市对得上（普通词：等于或以这个词 / 别名结尾；「海边 / 一二线 / 小众安静 / 风景」：对应城市名单；
+              城市按 KgJobCity 同一口径，只对线下岗位，见下面第二次复核）。
+              写法都由 AppJobController 用 KgLike 转义好（% _ \ 按字面找，MySQL like 默认转义符就是反斜杠），一律参数绑定。
+              之前只按标题 like，搜「海边」「大理 咖啡」都找不到
+            -->
+            <!--
+              同日复核：感觉词（海边 / 一二线 / 小众安静 / 风景）合成第一组，几条感觉之间「或者」，和普通词之间仍是「并且」。
+              「海边 / 海景 / 海岛 / 海滨」的文字匹配用 regexps（MySQL 8 REGEXP，'(^|[^洱邛])海边'，正则全是代码常量）：「洱海边」不再算海边。
+              towns 是小众安静里的古镇：地址里有古镇名，并且岗位城市是它所属的城市（双廊 / 喜洲 / 沙溪 → 大理）。
+              每组用 trim 去掉开头多出来的 or：感觉那一组可能只有 regexps、没有 likes
+            -->
+            <!--
+              第二次复核：凡是按城市的条件（cityLikes / cityExacts = 感觉的城市名单、普通词自己 / 别名 / 归一到的城市；
+              towns = 古镇要求岗位城市是它所属的城市）都套在 (j.job_type <> 'online' and (...)) 里：线上任务全国可接，
+              和下面的城市筛选一样不按城市找、也不按城市排除，只看文字。之前没套：线上页签搜「海边」「平潭」「小众安静」各列出 18 条
+              平潭门店发的线上任务，文字里一个「海」字都没有。古镇也套进去：线上任务没有工作地点，城市 / 地址是「不限 / 远程」或发布门店的。
+              普通词的城市改成和城市筛选同一口径（等于或以词 / 别名结尾，KgJobCity）：之前 j.city like %词%，「大连」带出「五大连池」。
+              文字（likes / regexps）只比标题、标签、地址、介绍，对所有类型生效；城市列不再做包含匹配，只走上面的城市口径。
+              城市写法、古镇写法都不会是空列表（KgJobCity.terms 至少有名字本身），所以 (… and ( … )) 里不会是空的
+            -->
+            <if test="params.keywordTerms != null">
+                <foreach item="kt" collection="params.keywordTerms">
+                    <trim prefix="and (" suffix=")" prefixOverrides="or ">
+                        <foreach item="kw" collection="kt.likes"> or j.title like #{kw} or j.tags like #{kw} or j.address like #{kw} or j.content like #{kw}</foreach>
+                        <if test="kt.regexps != null">
+                            <foreach item="kr" collection="kt.regexps"> or j.title regexp #{kr} or j.tags regexp #{kr} or j.address regexp #{kr} or j.content regexp #{kr}</foreach>
+                        </if>
+                        <if test="(kt.cityLikes != null and kt.cityLikes.size() &gt; 0) or (kt.cityExacts != null and kt.cityExacts.size() &gt; 0) or (kt.towns != null and kt.towns.size() &gt; 0)">
+                            or (j.job_type &lt;&gt; 'online' and <trim prefix="(" suffix=")" prefixOverrides="or ">
+                                <if test="kt.cityLikes != null">
+                                    <foreach item="vc" collection="kt.cityLikes"> or trim(j.city) like #{vc}</foreach>
+                                </if>
+                                <if test="kt.cityExacts != null">
+                                    <foreach item="vx" collection="kt.cityExacts"> or trim(j.city) = #{vx}</foreach>
+                                </if>
+                                <if test="kt.towns != null">
+                                    <foreach item="tw" collection="kt.towns"> or (j.address like #{tw.addressLike} and <trim prefix="(" suffix=")" prefixOverrides="or "><foreach item="tl" collection="tw.cityLikes"> or trim(j.city) like #{tl}</foreach><foreach item="te" collection="tw.cityExacts"> or trim(j.city) = #{te}</foreach></trim>)</foreach>
+                                </if>
+                            </trim>)
+                        </if>
+                    </trim>
+                </foreach>
+            </if>
+            <if test="jobType != null and jobType != ''"> and j.job_type = #{jobType}</if>
+            <!--
+              换工类型（「换工换宿」列表顶部的分类条）：只看换工岗位，按 work_kind 精确匹配；
+              选「其他」时（params.workKindUntyped 为 true），还没选类型（work_kind 为空串）的换工岗位也算在「其他」里。
+              之前没选类型的老岗位按类型名称 / 说明里的词模糊匹配标题和标签：「手工咖啡馆」会出现在「手作教学」下面，「其他」却一个都看不到。
+            -->
+            <if test="params.workKind != null and params.workKind != ''">
+                and j.job_type = 'volunteer'
+                <choose>
+                    <when test="params.workKindUntyped == true">and (j.work_kind = #{params.workKind} or j.work_kind = '')</when>
+                    <otherwise>and j.work_kind = #{params.workKind}</otherwise>
+                </choose>
+            </if>
+            <!--
+              线上任务全国可接；后台列表仍按原城市管理，不改门店归属。
+              城市按「等于或以城市 / 别名结尾」匹配（2026-10-16 审计，规则见 KgJobCity）：AppJobController 先把选中的城市归一成业务城市名，
+              再把它和字典里只属于它的别名（平潭 → 平潭岛、平潭县…）转义成 params.cityLikes（'%写法'）/ params.cityExacts（一个字的写法只认相等）。
+              选「平潭」带出「平潭岛」「福建平潭」，选「大理」带出「云南大理」；之前按包含 like %城市%，「大连」会带出「五大连池」、「中山」带出「中山区」。
+              和全部筛选页（KgUserHubService.appendCities）、首页、「有岗位的城市」下拉的数量同一口径。
+              只传了 city、没带写法列表的调用方按完全相等兜底，不会把条件放开
+            -->
+            <choose>
+                <when test="(params.cityLikes != null and params.cityLikes.size() &gt; 0) or (params.cityExacts != null and params.cityExacts.size() &gt; 0)">
+                    and (j.job_type = 'online'
+                    <if test="params.cityLikes != null">
+                        <foreach item="cityLike" collection="params.cityLikes"> or trim(j.city) like #{cityLike}</foreach>
+                    </if>
+                    <if test="params.cityExacts != null">
+                        <foreach item="cityExact" collection="params.cityExacts"> or trim(j.city) = #{cityExact}</foreach>
+                    </if>
+                    )
+                </when>
+                <when test="city != null and city != ''"> and (trim(j.city) = #{city} or j.job_type = 'online')</when>
+            </choose>
+            <if test="storeId != null"> and j.store_id = #{storeId}</if>
+            <!--
+              列表页筛选胶囊（2026-10-11）：之前点「薪资 / 技能 / 包住」都跳到大筛选页，现在在列表页直接选、直接生效。
+              薪资按「元/天」比，时薪 / 周薪 / 月薪按国家折算口径换成日薪（小时 × 8、周 ÷ 5、月 ÷ 21.75，和筛选页同一口径）；
+              计件、只有奖金 / 提成的岗位没有日薪口径，选了薪资档时不出现
+            -->
+            <if test="params.salaryMin != null">
+                and j.salary_type in ('hourly','daily','weekly','monthly')
+                and (case j.salary_type when 'daily' then coalesce(j.salary_max, j.salary_min) when 'hourly' then coalesce(j.salary_max, j.salary_min) * 8
+                     when 'weekly' then coalesce(j.salary_max, j.salary_min) / 5 when 'monthly' then coalesce(j.salary_max, j.salary_min) / 21.75 end) &gt;= #{params.salaryMin}
+            </if>
+            <if test="params.salaryMax != null">
+                and j.salary_type in ('hourly','daily','weekly','monthly')
+                and (case j.salary_type when 'daily' then j.salary_min when 'hourly' then j.salary_min * 8
+                     when 'weekly' then j.salary_min / 5 when 'monthly' then j.salary_min / 21.75 end) &lt;= #{params.salaryMax}
+            </if>
+            <!-- 食宿：room 包住（含包吃包住）/ meal 包吃（含包吃包住）/ all 包吃包住 / self 不包食宿（见下） -->
+            <if test="params.board == 'room'"> and j.board_type in ('all', 'room')</if>
+            <if test="params.board == 'meal'"> and j.board_type in ('all', 'meal')</if>
+            <if test="params.board == 'all'"> and j.board_type = 'all'</if>
+            <!-- 2026-10-17 兼职 / 全职页签的「不包食宿」：没写食宿（none 或空）的岗位；「包部分」（part）不算不包，也不算包吃 / 包住 -->
+            <if test="params.board == 'self'"> and coalesce(j.board_type, 'none') in ('none', '')</if>
+            <!--
+              每个页签自己的条件（2026-10-17 主人反馈，口径见 JobTabFilters）：
+              · 兼职「日薪」档 payDay：起薪（salary_min）折成元/天后不低于它（时 × 8、周 ÷ 5、月 ÷ 21.75）；
+              · 全职「月薪」档 payMonthMin（含）/ payMonthMax（不含）：起薪折成元/月（日 × 21.75、时 × 174、周 × 4.35）后落在区间里；
+                计件、面议、没写金额的岗位选了薪资档都不出现；
+              · 全职「类型」categoryTerms：门店名、岗位标题或岗位标签里有这一类的词（词表是代码常量，like 写法已转义），命中其一；
+                2026-10-18 起商家端发布全职岗位时把「门店类型」（民宿 / 酒店 / 咖啡餐饮 / 酒吧 / 其他）存成岗位的第一个标签，所以也认 j.tags；
+                「其他」= 全部类型的词（categoryAllLikes）一个都没有
+            -->
+            <if test="params.payDay != null">
+                and j.salary_type in ('hourly','daily','weekly','monthly') and j.salary_min is not null
+                and (case j.salary_type when 'daily' then j.salary_min when 'hourly' then j.salary_min * 8
+                     when 'weekly' then j.salary_min / 5 when 'monthly' then j.salary_min / 21.75 end) &gt;= #{params.payDay}
+            </if>
+            <if test="params.payMonthMin != null or params.payMonthMax != null">
+                and j.salary_type in ('hourly','daily','weekly','monthly') and j.salary_min is not null
+                <if test="params.payMonthMin != null">
+                    and (case j.salary_type when 'monthly' then j.salary_min when 'daily' then j.salary_min * 21.75
+                         when 'hourly' then j.salary_min * 174 when 'weekly' then j.salary_min * 4.35 end) &gt;= #{params.payMonthMin}
+                </if>
+                <if test="params.payMonthMax != null">
+                    and (case j.salary_type when 'monthly' then j.salary_min when 'daily' then j.salary_min * 21.75
+                         when 'hourly' then j.salary_min * 174 when 'weekly' then j.salary_min * 4.35 end)
+                    <choose><when test="params.payMonthMaxInclusive == true"> &lt;= </when><otherwise> &lt; </otherwise></choose>
+                    #{params.payMonthMax}
+                </if>
+            </if>
+            <if test="params.categoryTerms != null and params.categoryTerms.size() &gt; 0">
+                and
+                <foreach item="ct" collection="params.categoryTerms" open="(" separator=" or " close=")">
+                    <choose>
+                        <when test="ct.other == true">not (<foreach item="ca" collection="params.categoryAllLikes" separator=" or ">coalesce(s.store_name, '') like #{ca} or j.title like #{ca} or coalesce(j.tags, '') like #{ca}</foreach>)</when>
+                        <otherwise>(<foreach item="cw" collection="ct.likes" separator=" or ">coalesce(s.store_name, '') like #{cw} or j.title like #{cw} or coalesce(j.tags, '') like #{cw}</foreach>)</otherwise>
+                    </choose>
+                </foreach>
+            </if>
+            <!-- 技能 / 任务类型：词典里的同义词任一命中标题、标签、任职要求或线上任务类型即可（词走参数绑定） -->
+            <if test="params.skillWords != null and params.skillWords.size() &gt; 0">
+                and
+                <foreach item="w" collection="params.skillWords" open="(" separator=" or " close=")">
+                    j.title like concat('%', #{w}, '%') or j.tags like concat('%', #{w}, '%') or j.requirement like concat('%', #{w}, '%')
+                    or exists (select 1 from kg_online_task ot where ot.job_id = j.job_id and ot.task_type like concat('%', #{w}, '%'))
+                </foreach>
+            </if>
+            <!--
+              线上任务列表的「任务类型」胶囊：按发布时选的任务类型（kg_online_task.task_type）精确匹配，和「全部筛选」页同一口径；
+              选「其他」时（params.taskTypeUntyped 为 true），没有任务类型的老线上岗位也算进来。
+              之前和技能一样展开同义词去模糊匹配，「社群运营」会带出标题里有「公众号」「小红书」的其他类型任务
+            -->
+            <if test="params.taskType != null and params.taskType != ''">
+                and j.job_type = 'online'
+                and (exists (select 1 from kg_online_task ot where ot.job_id = j.job_id and ot.task_type = #{params.taskType})
+                <if test="params.taskTypeUntyped == true">
+                    or not exists (select 1 from kg_online_task ot where ot.job_id = j.job_id)
+                </if>
+                )
+            </if>
+            <!-- 停留时长：最短要求天数不超过我能待的天数 -->
+            <if test="params.minStay != null"> and coalesce(j.min_days, 0) &lt;= #{params.minStay}</if>
+            <!-- 培训：写了培训说明的岗位 -->
+            <if test="params.train == true"> and j.train_desc is not null and j.train_desc &lt;&gt; ''</if>
+            <!-- 满月红包（V44）：门店发布时勾了「做满一个月有红包」的岗位（month_redpacket 0 有 1 没有） -->
+            <if test="params.monthBonus == true"> and j.month_redpacket = '0'</if>
+            <!--
+              岗位筛选面板（V48，2026-10-16 第二轮改版；取值白名单见 JobFilterFields，AppJobController 校验过才放进来）：
+              · 性别偏好：选「女」= 写了「女」或没写（男女不限）的岗位；兼职、全职、线上任务一律存 ''，自然都在。不选 = 不筛；
+              · 休息排班 / 住宿条件：多选，命中其一；门店没填（''）的岗位不算符合，免得筛「单人间」看到住大通铺的岗位；
+              · 安心保障「经袋鼠实地拍摄并含保险」：门店通过安心商家认证（s.safe_cert = '0'）且岗位含保险（insurance_flag = '0'），线上任务不算
+            -->
+            <if test="params.gender != null and params.gender != ''"> and j.gender_pref in ('', #{params.gender})</if>
+            <if test="params.restModes != null and params.restModes.size() &gt; 0">
+                and j.rest_mode in
+                <foreach item="rm" collection="params.restModes" open="(" separator="," close=")">#{rm}</foreach>
+            </if>
+            <!-- Only explicit lodging descriptions match; unknown bathroom information is not inferred. -->
+            <if test="params.bathroom == 'private'">
+                and coalesce(j.board_desc,'') regexp '独卫|独立卫浴|独立卫生间|独立洗手间'
+                and coalesce(j.board_desc,'') not regexp '无独卫|非独卫|不含独卫|无独立卫浴|无独立卫生间'
+            </if>
+            <if test="params.bathroom == 'shared'">
+                and coalesce(j.board_desc,'') regexp '公卫|公共卫浴|公共卫生间|公共洗手间|共用卫浴|共用卫生间'
+                and coalesce(j.board_desc,'') not regexp '无公卫|非公卫'
+            </if>
+            <if test="params.roomTypes != null and params.roomTypes.size() &gt; 0">
+                and j.room_type in
+                <foreach item="rt" collection="params.roomTypes" open="(" separator="," close=")">#{rt}</foreach>
+            </if>
+            <if test="params.assured == true"> and j.job_type &lt;&gt; 'online' and j.insurance_flag = '0' and (case when j.recruit_store_id is null then s.safe_cert else rs.safe_cert end) = '0'</if>
+        </where>
+        <include refid="displayOrder"/>
+    </select>
+
+    <!-- hired_count / applied_count 不在可写列里：统计值只由 increaseHiredCount/increaseAppliedCount 维护 -->
+    <insert id="insertKgJob" parameterType="KgJob" useGeneratedKeys="true" keyProperty="jobId">
+        insert into kg_job
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="sortNo != null">sort_no,</if>
+            <if test="storeId != null">store_id,</if>
+            <if test="recruitStoreId != null">recruit_store_id,</if>
+            <if test="jobType != null">job_type,</if>
+            <if test="workKind != null">work_kind,</if>
+            <if test="genderPref != null">gender_pref,</if>
+            <if test="restMode != null">rest_mode,</if>
+            <if test="roomType != null">room_type,</if>
+            gender_male_count, gender_female_count,
+            <if test="title != null">title,</if>
+            <if test="cover != null">cover,</if>
+            <if test="images != null">images,</if>
+            <if test="mealAllowance != null">meal_allowance,</if>
+            <if test="mealAllowanceUnit != null">meal_allowance_unit,</if>
+            <if test="petStatus != null">pet_status,</if>
+            <if test="petImages != null">pet_images,</if>
+            <if test="lodgingImages != null">lodging_images,</if>
+            <if test="lodgingVideo != null">lodging_video,</if>
+            <if test="lodgingVideoCover != null">lodging_video_cover,</if>
+            <if test="city != null">city,</if>
+            <if test="address != null">address,</if>
+            <if test="latitude != null">latitude,</if>
+            <if test="longitude != null">longitude,</if>
+            <if test="salaryType != null">salary_type,</if>
+            <if test="salaryMin != null">salary_min,</if>
+            <if test="salaryMax != null">salary_max,</if>
+            <if test="salaryUnit != null">salary_unit,</if>
+            <if test="bonusDesc != null">bonus_desc,</if>
+            <if test="commissionDesc != null">commission_desc,</if>
+            <if test="settleDesc != null">settle_desc,</if>
+            <if test="startDate != null">start_date,</if>
+            <if test="minDays != null">min_days,</if>
+            <if test="dailyHours != null">daily_hours,</if>
+            <if test="shiftDesc != null">shift_desc,</if>
+            <if test="shiftTime != null">shift_time,</if>
+            <if test="trainDesc != null">train_desc,</if>
+            <if test="probation != null">probation,</if>
+            <if test="benefits != null">benefits,</if>
+            <if test="deliverDesc != null">deliver_desc,</if>
+            <if test="estHours != null">est_hours,</if>
+            <if test="remoteFlag != null">remote_flag,</if>
+            <if test="publisherName != null">publisher_name,</if>
+            <if test="boardType != null">board_type,</if>
+            <if test="boardDesc != null">board_desc,</if>
+            <if test="insuranceFlag != null">insurance_flag,</if>
+            <if test="monthRedpacket != null and monthRedpacket != ''">month_redpacket,</if>
+            <if test="headcount != null">headcount,</if>
+            <if test="tags != null">tags,</if>
+            <if test="content != null">content,</if>
+            <if test="requirement != null">requirement,</if>
+            <if test="status != null">status,</if>
+            <if test="publishTime != null">publish_time,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="remark != null">remark,</if>
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="sortNo != null">#{sortNo},</if>
+            <if test="storeId != null">#{storeId},</if>
+            <if test="recruitStoreId != null">#{recruitStoreId},</if>
+            <if test="jobType != null">#{jobType},</if>
+            <if test="workKind != null">#{workKind},</if>
+            <if test="genderPref != null">#{genderPref},</if>
+            <if test="restMode != null">#{restMode},</if>
+            <if test="roomType != null">#{roomType},</if>
+            #{genderMaleCount,jdbcType=INTEGER}, #{genderFemaleCount,jdbcType=INTEGER},
+            <if test="title != null">#{title},</if>
+            <if test="cover != null">#{cover},</if>
+            <if test="images != null">#{images},</if>
+            <if test="mealAllowance != null">#{mealAllowance},</if>
+            <if test="mealAllowanceUnit != null">#{mealAllowanceUnit},</if>
+            <if test="petStatus != null">#{petStatus},</if>
+            <if test="petImages != null">#{petImages},</if>
+            <if test="lodgingImages != null">#{lodgingImages},</if>
+            <if test="lodgingVideo != null">#{lodgingVideo},</if>
+            <if test="lodgingVideoCover != null">#{lodgingVideoCover},</if>
+            <if test="city != null">#{city},</if>
+            <if test="address != null">#{address},</if>
+            <if test="latitude != null">#{latitude},</if>
+            <if test="longitude != null">#{longitude},</if>
+            <if test="salaryType != null">#{salaryType},</if>
+            <if test="salaryMin != null">#{salaryMin},</if>
+            <if test="salaryMax != null">#{salaryMax},</if>
+            <if test="salaryUnit != null">#{salaryUnit},</if>
+            <if test="bonusDesc != null">#{bonusDesc},</if>
+            <if test="commissionDesc != null">#{commissionDesc},</if>
+            <if test="settleDesc != null">#{settleDesc},</if>
+            <if test="startDate != null">#{startDate},</if>
+            <if test="minDays != null">#{minDays},</if>
+            <if test="dailyHours != null">#{dailyHours},</if>
+            <if test="shiftDesc != null">#{shiftDesc},</if>
+            <if test="shiftTime != null">#{shiftTime},</if>
+            <if test="trainDesc != null">#{trainDesc},</if>
+            <if test="probation != null">#{probation},</if>
+            <if test="benefits != null">#{benefits},</if>
+            <if test="deliverDesc != null">#{deliverDesc},</if>
+            <if test="estHours != null">#{estHours},</if>
+            <if test="remoteFlag != null">#{remoteFlag},</if>
+            <if test="publisherName != null">#{publisherName},</if>
+            <if test="boardType != null">#{boardType},</if>
+            <if test="boardDesc != null">#{boardDesc},</if>
+            <if test="insuranceFlag != null">#{insuranceFlag},</if>
+            <if test="monthRedpacket != null and monthRedpacket != ''">#{monthRedpacket},</if>
+            <if test="headcount != null">#{headcount},</if>
+            <if test="tags != null">#{tags},</if>
+            <if test="content != null">#{content},</if>
+            <if test="requirement != null">#{requirement},</if>
+            <if test="status != null">#{status},</if>
+            <if test="publishTime != null">#{publishTime},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="remark != null">#{remark},</if>
+            sysdate()
+        </trim>
+    </insert>
+
+    <!--
+      动态 SET 的局部更新：只写"传了值"的列。
+      内部局部更新专用（changeStatus 只带 jobId/status/publishTime 就调它），
+      后台整表单编辑请走下面的 updateKgJobByAdmin。
+    -->
+    <update id="updateKgJob" parameterType="KgJob">
+        update kg_job
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="storeId != null">store_id = #{storeId},</if>
+            <if test="jobType != null">job_type = #{jobType},</if>
+            <if test="workKind != null">work_kind = #{workKind},</if>
+            <if test="genderPref != null">gender_pref = #{genderPref},</if>
+            <if test="genderCountsEnabled != null">
+                gender_male_count = #{genderMaleCount,jdbcType=INTEGER},
+                gender_female_count = #{genderFemaleCount,jdbcType=INTEGER},
+            </if>
+            <if test="restMode != null">rest_mode = #{restMode},</if>
+            <if test="roomType != null">room_type = #{roomType},</if>
+            <if test="title != null">title = #{title},</if>
+            <if test="cover != null">cover = #{cover},</if>
+            <if test="images != null">images = #{images},</if>
+            <if test="mealAllowance != null">meal_allowance = #{mealAllowance},</if>
+            <if test="mealAllowanceUnit != null">meal_allowance_unit = #{mealAllowanceUnit},</if>
+            <if test="petStatus != null">pet_status = #{petStatus},</if>
+            <if test="petImages != null">pet_images = #{petImages},</if>
+            <if test="lodgingImages != null">lodging_images = #{lodgingImages},</if>
+            <if test="lodgingVideo != null">lodging_video = #{lodgingVideo},</if>
+            <if test="lodgingVideoCover != null">lodging_video_cover = #{lodgingVideoCover},</if>
+            <if test="city != null">city = #{city},</if>
+            <if test="address != null">address = #{address},</if>
+            <if test="latitude != null">latitude = #{latitude},</if>
+            <if test="longitude != null">longitude = #{longitude},</if>
+            <if test="salaryType != null">salary_type = #{salaryType},</if>
+            <if test="salaryMin != null">salary_min = #{salaryMin},</if>
+            <if test="salaryMax != null">salary_max = #{salaryMax},</if>
+            <if test="salaryUnit != null">salary_unit = #{salaryUnit},</if>
+            <if test="bonusDesc != null">bonus_desc = #{bonusDesc},</if>
+            <if test="commissionDesc != null">commission_desc = #{commissionDesc},</if>
+            <if test="settleDesc != null">settle_desc = #{settleDesc},</if>
+            <if test="startDate != null">start_date = #{startDate},</if>
+            <if test="minDays != null">min_days = #{minDays},</if>
+            <if test="dailyHours != null">daily_hours = #{dailyHours},</if>
+            <if test="shiftDesc != null">shift_desc = #{shiftDesc},</if>
+            <if test="shiftTime != null">shift_time = #{shiftTime},</if>
+            <if test="trainDesc != null">train_desc = #{trainDesc},</if>
+            <if test="probation != null">probation = #{probation},</if>
+            <if test="benefits != null">benefits = #{benefits},</if>
+            <if test="deliverDesc != null">deliver_desc = #{deliverDesc},</if>
+            <if test="estHours != null">est_hours = #{estHours},</if>
+            <if test="remoteFlag != null">remote_flag = #{remoteFlag},</if>
+            <if test="publisherName != null">publisher_name = #{publisherName},</if>
+            <if test="boardType != null">board_type = #{boardType},</if>
+            <if test="boardDesc != null">board_desc = #{boardDesc},</if>
+            <if test="insuranceFlag != null">insurance_flag = #{insuranceFlag},</if>
+            <if test="monthRedpacket != null and monthRedpacket != ''">month_redpacket = #{monthRedpacket},</if>
+            <if test="headcount != null">headcount = #{headcount},</if>
+            <if test="tags != null">tags = #{tags},</if>
+            <if test="content != null">content = #{content},</if>
+            <if test="requirement != null">requirement = #{requirement},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="publishTime != null">publish_time = #{publishTime},</if>
+            <if test="closeTime != null">close_time = #{closeTime},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_time = sysdate()
+        </trim>
+        where job_id = #{jobId} and del_flag = '0'
+    </update>
+
+    <!--
+      后台"整表单编辑"专用的全量更新。
+
+      为什么要和 updateKgJob 拆成两条语句：
+      updateKgJob 全是 <if test="x != null">，语义是"没传的列保持原值"。
+      内部的局部更新需要这个语义 —— changeStatus 只 set jobId/status/publishTime 就调它，
+      一旦把 start_date 之类改成无条件 SET，一次上下架就会把可开始日期清成 NULL。
+      但对后台表单来说，"没传"恰恰等于"运营把这个可选项清空了"：动态 SET 会整列跳过，
+      于是出现"弹了修改成功、库里没变"（只有 update_time 被刷新）。
+      两种语义无法共存，所以后台编辑单独走这条全量语句，内部路径继续用 updateKgJob。
+
+      列的分档：
+      1) 必填列（store_id / job_type / title / city / headcount / salary_type）：无条件 SET。
+         KgJobServiceImpl.updateKgJob 已在入参本身上跑过 validate()（不再回落到库里的旧值），
+         保证它们非空，不会把 NOT NULL 列写成 NULL。
+      2) 可清空列：无条件 SET，运营清空就写 NULL。即
+         cover、address、salary_min、salary_max、salary_unit、settle_desc、start_date、
+         min_days、daily_hours、shift_desc、shift_time、train_desc、probation、benefits、
+         deliver_desc、est_hours、publisher_name、board_desc、tags、content、requirement、remark。
+         显式写 jdbcType：传 null 时 JDBC 驱动无法从 Java 侧推断类型，不写容易踩到设置空值失败。
+         latitude / longitude（V42 工作地点坐标）也无条件 SET，但后台表单里没有这两个输入框：
+         保留库里的点还是清掉，由 KgJobServiceImpl.applyLocation 先算好再交给这里（没改地点就带回原坐标，改了地点文字就置空）。
+      3) 有数据库默认值的开关/枚举列（board_type / insurance_flag / remote_flag / month_redpacket）：仍带 <if> 判空。
+         它们在后台表单里是单选/下拉，界面上根本清不空；真收到 null 时保留原值，
+         比把小程序端依赖的枚举写成 NULL 更安全。
+      4) 不在本语句里的列：hired_count / applied_count 由 increaseHiredCount 等统计接口维护，
+         status / publish_time / close_time 由 changeStatus 维护，del_flag 归逻辑删除。
+         后台编辑无论传什么都碰不到它们。
+
+      where 里除主键外只剩名额兜底那一条，见它自己位置上的说明。
+
+      这里刻意不做基于 update_time 的乐观锁。update_time 不是这张表的版本号：
+      increaseAppliedCount（每一次 C 端报名）、increase/decreaseHiredCount、recalcCounters
+      都会刷新它，而它们改的列后台编辑表单一个都不涉及。拿它当版本比对的结果是
+      "运营打开表单期间随便谁报个名，保存就被判成冲突"，热门岗位在招聘期可以反复触发，
+      一次全量重算更会把当时所有摊开的表单一次性作废 —— 误拒的代价远大于它能挡住的覆盖。
+      真要做并发覆盖检测，得另加一列只由后台编辑自增的 version，那是 DDL 的事。
+    -->
+    <update id="updateKgJobByAdmin" parameterType="KgJob">
+        update kg_job
+        set <if test="sortNo != null">sort_no = #{sortNo},</if>
+            store_id      = #{storeId},
+            recruit_store_id = #{recruitStoreId},
+            job_type      = #{jobType},
+            title         = #{title},
+            city          = #{city},
+            headcount     = #{headcount},
+            salary_type   = #{salaryType},
+            cover          = #{cover, jdbcType=VARCHAR},
+            address        = #{address, jdbcType=VARCHAR},
+            latitude       = #{latitude, jdbcType=DECIMAL},
+            longitude      = #{longitude, jdbcType=DECIMAL},
+            salary_min     = #{salaryMin, jdbcType=DECIMAL},
+            salary_max     = #{salaryMax, jdbcType=DECIMAL},
+            salary_unit    = #{salaryUnit, jdbcType=VARCHAR},
+            bonus_desc     = #{bonusDesc, jdbcType=VARCHAR},
+            commission_desc = #{commissionDesc, jdbcType=VARCHAR},
+            settle_desc    = #{settleDesc, jdbcType=VARCHAR},
+            start_date     = #{startDate, jdbcType=DATE},
+            min_days       = #{minDays, jdbcType=INTEGER},
+            daily_hours    = #{dailyHours, jdbcType=VARCHAR},
+            shift_desc     = #{shiftDesc, jdbcType=VARCHAR},
+            shift_time     = #{shiftTime, jdbcType=VARCHAR},
+            train_desc     = #{trainDesc, jdbcType=VARCHAR},
+            probation      = #{probation, jdbcType=VARCHAR},
+            benefits       = #{benefits, jdbcType=VARCHAR},
+            deliver_desc   = #{deliverDesc, jdbcType=VARCHAR},
+            est_hours      = #{estHours, jdbcType=VARCHAR},
+            publisher_name = #{publisherName, jdbcType=VARCHAR},
+            board_desc     = #{boardDesc, jdbcType=VARCHAR},
+            tags           = #{tags, jdbcType=VARCHAR},
+            content        = #{content, jdbcType=VARCHAR},
+            requirement    = #{requirement, jdbcType=VARCHAR},
+            remark         = #{remark, jdbcType=VARCHAR},
+            <if test="boardType != null and boardType != ''">board_type = #{boardType},</if>
+            <if test="insuranceFlag != null and insuranceFlag != ''">insurance_flag = #{insuranceFlag},</if>
+            <if test="remoteFlag != null and remoteFlag != ''">remote_flag = #{remoteFlag},</if>
+            <!-- 满月红包（V44）：老版本后台表单不带这个字段时保持原值 -->
+            <if test="monthRedpacket != null and monthRedpacket != ''">month_redpacket = #{monthRedpacket},</if>
+            <!-- 换工类型：Service 已归一（非换工岗位为 ''）；为 null 只在老版本后台表单不带这个字段时出现，此时保持原值 -->
+            <if test="workKind != null">work_kind = #{workKind},</if>
+            <!--
+              筛选条件（V48）：Service 已按白名单和岗位类型收口（KgJobServiceImpl.applyFilterFields，非空串即已校验）；
+              为 null 只在老版本后台表单不带这几个字段、又找不到原值时出现，此时保持原值
+            -->
+            <if test="genderPref != null">gender_pref = #{genderPref},</if>
+            <if test="genderCountsEnabled != null">
+                gender_male_count = #{genderMaleCount,jdbcType=INTEGER},
+                gender_female_count = #{genderFemaleCount,jdbcType=INTEGER},
+            </if>
+            <if test="restMode != null">rest_mode = #{restMode},</if>
+            <if test="roomType != null">room_type = #{roomType},</if>
+            <!-- 岗位照片（V49）：Service 已校验（JobImages.parse）并把封面同步成第一张；为 null 只在老版本后台表单不带这个字段时出现，此时保持原值 -->
+            <if test="images != null">images = #{images},</if>
+            <!-- 招募表单新字段（V66）：Service 已校验并收口（KgJobServiceImpl.applyExtras）；为 null 只在老版本后台表单不带这几个字段时出现，此时保持原值 -->
+            <if test="mealAllowance != null">meal_allowance = #{mealAllowance},</if>
+            <if test="mealAllowanceUnit != null">meal_allowance_unit = #{mealAllowanceUnit},</if>
+            <if test="petStatus != null">pet_status = #{petStatus},</if>
+            <if test="petImages != null">pet_images = #{petImages},</if>
+            <if test="lodgingImages != null">lodging_images = #{lodgingImages},</if>
+            <if test="lodgingVideo != null">lodging_video = #{lodgingVideo},</if>
+            <if test="lodgingVideoCover != null">lodging_video_cover = #{lodgingVideoCover},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            update_time = sysdate()
+        where job_id = #{jobId} and del_flag = '0'
+        <!--
+          名额兜底：这条语句自己保证写不出 hired_count 超过 headcount 的非法岗位。
+          Service 里也有一次同样的比较，但它拿的是先查出来的旧行，并发确认录用会从
+          "查"和"写"之间穿过去；只有条件落在 where 上、由 InnoDB 在行锁下求值，才真的拦得住。
+          影响 0 行时上层回查一次再报错，见 KgJobServiceImpl.explainFailedAdminUpdate。
+
+          两个 is null 分支不能省。SQL 三值逻辑里只要有一边是 null，比较结果就是 null，
+          既不真也不假，整条 where 随之不成立：headcount 没传（本模块的调用方跑过 validate
+          必然非空，但语句不该指望调用方的自觉）或库里 hired_count 为 NULL 时，
+          少了这两支就会把一次正常编辑判成 0 行，再被上层报成并发冲突，答非所问。
+        -->
+        and (#{headcount, jdbcType=INTEGER} is null
+             or hired_count is null
+             or #{headcount, jdbcType=INTEGER} &gt;= hired_count)
+    </update>
+
+    <update id="deleteKgJobByJobIds">
+        update kg_job set del_flag = '2', update_by = #{updateBy}, update_time = sysdate()
+        where job_id in
+        <foreach item="jobId" collection="jobIds" open="(" separator="," close=")">
+            #{jobId}
+        </foreach>
+        and del_flag = '0'
+    </update>
+
+    <select id="countByStoreId" resultType="int">
+        select count(1) from kg_job where (store_id = #{storeId} or recruit_store_id = #{storeId}) and del_flag = '0'
+    </select>
+
+    <update id="increaseAppliedCount">
+        update kg_job set applied_count = applied_count + 1, update_time = sysdate()
+        where job_id = #{jobId} and del_flag = '0'
+    </update>
+
+    <!-- hired_count &lt; headcount 放进 where：由数据库行锁保证并发录用不会超额，返回 0 即名额已满（或岗位已下架 / 草稿，调用方再读一次区分） -->
+    <update id="increaseHiredCount">
+        update kg_job set hired_count = hired_count + 1, update_time = sysdate()
+        where job_id = #{jobId} and del_flag = '0' and hired_count &lt; headcount
+          and status in ('published', 'paused')
+    </update>
+
+    <update id="decreaseHiredCount">
+        <!-- hired_count > 0 是下限保护：即便上层重复调用也不会把计数减成负数 -->
+        update kg_job set hired_count = hired_count - 1, update_time = sysdate()
+        where job_id = #{jobId} and del_flag = '0' and hired_count &gt; 0
+    </update>
+
+    <update id="recalcCounters">
+        <!--
+          按 kg_application 的实际行数重算冗余统计列。
+          hired_count 只数"已扣过名额"的状态；applied_count 是累计报名人数，
+          撤回/驳回不回退，所以只排除逻辑删除行。
+        -->
+        update kg_job j set
+            j.applied_count = (select count(1) from kg_application a
+                                where a.job_id = j.job_id and a.del_flag = '0'),
+            j.hired_count = (select count(1) from kg_application a
+                              where a.job_id = j.job_id and a.del_flag = '0'
+                                and a.status in ('store_confirmed', 'contract_signed', 'onboarded')),
+            j.update_time = sysdate()
+        where j.del_flag = '0'
+        <if test="jobId != null"> and j.job_id = #{jobId}</if>
+    </update>
+
+</mapper>

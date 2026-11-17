@@ -126,6 +126,7 @@ public class SysUserController extends BaseController
     {
         deptService.checkDeptDataScope(user.getDeptId());
         roleService.checkRoleDataScope(user.getRoleIds());
+        SecurityUtils.checkPasswordLength(user.getPassword());
         if (!userService.checkUserNameUnique(user))
         {
             return error("新增用户'" + user.getUserName() + "'失败，登录账号已存在");
@@ -168,6 +169,9 @@ public class SysUserController extends BaseController
             return error("修改用户'" + user.getUserName() + "'失败，邮箱账号已存在");
         }
         user.setUpdateBy(getUsername());
+        // Profile edits do not reset credentials. Password changes require the
+        // separately authorized resetPwd endpoint and its encryption step.
+        user.setPassword(null);
         return toAjax(userService.updateUser(user));
     }
 
@@ -196,6 +200,7 @@ public class SysUserController extends BaseController
     {
         userService.checkUserAllowed(user);
         userService.checkUserDataScope(user.getUserId());
+        SecurityUtils.checkPasswordLength(user.getPassword());
         user.setPassword(SecurityUtils.encryptPassword(user.getPassword()));
         user.setUpdateBy(getUsername());
         return toAjax(userService.resetPwd(user));
